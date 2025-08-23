@@ -365,7 +365,6 @@ local SaveManager = {} do
 
 		section:AddButton({
 			Title = "Delete All Configs",
-			Description = "Permanently delete all saved configurations",
 			Callback = function()
 				-- Get all config files
 				local configFolder = `{self.Folder}/settings`
@@ -404,10 +403,27 @@ local SaveManager = {} do
 				})
 			end
 		})
+		local AutoloadButton
+		AutoloadButton = section:AddButton({Title = "Set as autoload", Description = "Current autoload config: none", Callback = function()
+			local name = SaveManager.Options.SaveManager_ConfigList.Value
+			writefile(`{self.Folder}/settings/autoload.txt`, name)
+			AutoloadButton:SetDesc("Current autoload config: " .. name)
+			self.Library:Notify({
+				Title = "Interface",
+				Content = "Config loader",
+				SubContent = string.format("Set %q to auto load", name),
+				Duration = 7
+			})
+		end})
+
+		if isfile(`{self.Folder}/settings/autoload.txt`) then
+			local name = readfile(`{self.Folder}/settings/autoload.txt`)
+			AutoloadButton:SetDesc("Current autoload config: " .. name)
+		end
+
 		-- Add a Clear Autoload button
 		section:AddButton({
 			Title = "Clear Autoload",
-			Description = "Removes the current autoload setting",
 			Callback = function()
 				if isfile(`{self.Folder}/settings/autoload.txt`) then
 					delfile(`{self.Folder}/settings/autoload.txt`)
@@ -429,25 +445,6 @@ local SaveManager = {} do
 				end
 			end
 		})
-
-		local AutoloadButton
-		AutoloadButton = section:AddButton({Title = "Set as autoload", Description = "Current autoload config: none", Callback = function()
-			local name = SaveManager.Options.SaveManager_ConfigList.Value
-			writefile(`{self.Folder}/settings/autoload.txt`, name)
-			AutoloadButton:SetDesc("Current autoload config: " .. name)
-			self.Library:Notify({
-				Title = "Interface",
-				Content = "Config loader",
-				SubContent = string.format("Set %q to auto load", name),
-				Duration = 7
-			})
-		end})
-
-		if isfile(`{self.Folder}/settings/autoload.txt`) then
-			local name = readfile(`{self.Folder}/settings/autoload.txt`)
-			AutoloadButton:SetDesc("Current autoload config: " .. name)
-		end
-
 		SaveManager:SetIgnoreIndexes({ "SaveManager_ConfigList", "SaveManager_ConfigName" })
 	end
 
