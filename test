@@ -363,66 +363,22 @@ local SaveManager = {} do
 			SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
 		end})
 
-		-- Add this code after the "Refresh list" button in BuildConfigSection function
 		section:AddButton({
-			Title = "Delete Config",
-			Description = "Removes the selected config from the list",
+			Title = "Clear Config List",
+			Description = "Remove all values from the config dropdown",
 			Callback = function()
-				local name = SaveManager.Options.SaveManager_ConfigList.Value
+				-- Clear the config list dropdown values
+				SaveManager.Options.SaveManager_ConfigList:SetValues({})
+				SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
 				
-				if not name or name:gsub(" ", "") == "" then
-					return self.Library:Notify({
-						Title = "Interface",
-						Content = "Config Removal",
-						SubContent = "No config selected to delete",
-						Duration = 7
-					})
-				end
-				
-				-- Confirm deletion with a dialog
-				self.Library:Dialog({
-					Title = "Delete Configuration",
-					Content = "Are you sure you want to delete config '" .. name .. "'?",
-					Buttons = {
-						{
-							Title = "Yes",
-							Callback = function()
-								-- Delete the config file
-								local file = `{self.Folder}/settings/{name}.json`
-								if isfile(file) then
-									delfile(file)
-								end
-								
-								-- If this config was set to autoload, clear the autoload file
-								if isfile(`{self.Folder}/settings/autoload.txt`) then
-									local autoloadName = readfile(`{self.Folder}/settings/autoload.txt`)
-									if autoloadName == name then
-										delfile(`{self.Folder}/settings/autoload.txt`)
-										AutoloadButton:SetDesc("Current autoload config: none")
-									end
-								end
-								
-								-- Refresh the config list
-								SaveManager.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
-								SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
-								
-								self.Library:Notify({
-									Title = "Interface",
-									Content = "Config Removal",
-									SubContent = string.format("Deleted config %q", name),
-									Duration = 7
-								})
-							end
-						},
-						{
-							Title = "No",
-							Callback = function() end
-						}
-					}
+				self.Library:Notify({
+					Title = "Interface",
+					Content = "Config List",
+					SubContent = "Config dropdown values have been cleared",
+					Duration = 5
 				})
 			end
 		})
-
 		-- Add a Clear Autoload button
 		section:AddButton({
 			Title = "Clear Autoload",
