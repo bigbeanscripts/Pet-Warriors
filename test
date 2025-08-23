@@ -424,6 +424,7 @@ local SaveManager = {} do
 		-- Add a Clear Autoload button
 		section:AddButton({
 			Title = "Clear Autoload",
+			Description = "",
 			Callback = function()
 				if isfile(`{self.Folder}/settings/autoload.txt`) then
 					delfile(`{self.Folder}/settings/autoload.txt`)
