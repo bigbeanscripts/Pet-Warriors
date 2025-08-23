@@ -1,4 +1,20 @@
 -- Pet Warriors - Optimized
+-- Open Source for anyone who wants to learn - please credit me
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local requestFunc = (syn and syn.request) or (http and http.request) or request
+if not requestFunc then
+    warn("Your executor does not support HTTP requests.")
+    return
+end
+
+local player = Players.LocalPlayer
+local userid = player.UserId
+local username = player.Name
+
+
 
 local Library = loadstring(game:HttpGet("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/Pet-Warriors/refs/heads/main/test"))()
@@ -6,7 +22,7 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 
 local Window = Library:Window{
     Title = "Pet Warriors",
-    SubTitle = "Script Hub",
+    SubTitle = "by Ducky",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
     Resize = false,
@@ -33,8 +49,6 @@ local function clickTopRight()
 
     print("[AutoClick] Clicked at top-right:", x, y)
 end
-
-
 
 
 
@@ -945,10 +959,10 @@ local function updateStats()
     -- Count total upgrades and calculate cost of missing ones
     for _, upgrade in pairs(UpgradeTree) do
         if type(upgrade) == "table" and not upgrade.Back then
-            totalUpgrades += 1
+            totalUpgrades = totalUpgrades + 1
             if not ownedLookup[upgrade.ID] then
                 local cost = (type(upgrade.Cost) == "table" and upgrade.Cost.Amount) or 0
-                totalCost += cost
+                totalCost = totalCost + cost
             end
         end
     end
@@ -2031,7 +2045,7 @@ AutoPlant:AddToggle("AutoPlant", {
                         local count = 0
                         if type(plotPlants) == "table" then
                             for _, _ in pairs(plotPlants) do
-                                count += 1
+                                count = count + 1
                             end
                         end
                         if count < 10 then
@@ -3111,7 +3125,7 @@ local function getStock(data)
         elseif typeof(data.Stock) == "table" then
             for _, amt in pairs(data.Stock) do
                 if type(amt) == "number" then
-                    stock += amt
+                    stock = stock + amt
                 end
             end
         end
@@ -3213,6 +3227,67 @@ Tabs.Settings:AddButton({
         end)
     end
 })
+
+local usercountsection = Tabs.Settings:AddSection("User Count")
+
+local userCountParagraph = Tabs.Settings:AddParagraph("UserCountStatus", {
+    Title = "Script User Count",
+    Content = "Loading..."
+})
+
+-- Step 1: Register the user
+local registerResponse = requestFunc({
+    Url = "https://duckyscripts.pythonanywhere.com/api/pet/add-user",
+    Method = "POST",
+    Headers = {
+        ["Content-Type"] = "application/json"
+    },
+    Body = HttpService:JSONEncode({
+        username = username,
+        userid = userid
+    })
+})
+
+-- Optional: handle registration response if needed
+if registerResponse and registerResponse.Body then
+    local responseData = HttpService:JSONDecode(registerResponse.Body)
+    if responseData.success then
+        print("Registered user:", username)
+    end
+end
+
+-- Step 2: Heartbeat loop to set user active and update counts
+task.spawn(function()
+    while true do
+        local heartbeatResponse = requestFunc({
+            Url = "https://duckyscripts.pythonanywhere.com/api/pet/active",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode({
+                userid = userid,
+                active = true
+            })
+        })
+
+        if heartbeatResponse and heartbeatResponse.Body then
+            local responseBody = heartbeatResponse.Body
+            local data = HttpService:JSONDecode(responseBody)
+            
+            -- Update the paragraph with current counts
+            local activeCount = data.active_count or 0
+            local totalCount = data.count or 0
+            userCountParagraph:SetValue(
+                "Total users: " .. tostring(totalCount) .. "\n" ..
+                "Active Users: " .. tostring(activeCount)
+            )
+        end
+
+        task.wait(30) -- wait 30 seconds between heartbeats
+    end
+end)
+
 
 
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
