@@ -364,56 +364,43 @@ local SaveManager = {} do
 		end})
 
 		section:AddButton({
-			Title = "Clear Config List",
-			Description = "Delete all config files from disk",
+			Title = "Delete All Configs",
+			Description = "Permanently delete all saved configurations",
 			Callback = function()
-				-- Show confirmation dialog before deletion
-				self.Library:Dialog({
-					Title = "Delete All Configurations",
-					Content = "Are you sure you want to delete ALL saved configurations? This cannot be undone.",
-					Buttons = {
-						{
-							Title = "Yes",
-							Callback = function()
-								-- Get all config files
-								local list = listfiles(`{self.Folder}/settings`)
-								local deletedCount = 0
-								
-								-- Delete each .json config file
-								for _, filePath in ipairs(list) do
-									if filePath:sub(-5) == ".json" and not filePath:find("options.json") then
-										pcall(function() 
-											delfile(filePath)
-											deletedCount = deletedCount + 1
-										end)
-									end
-								end
-								
-								-- Also clear autoload if it exists
-								if isfile(`{self.Folder}/settings/autoload.txt`) then
-									delfile(`{self.Folder}/settings/autoload.txt`)
-									if AutoloadButton then
-										AutoloadButton:SetDesc("Current autoload config: none")
-									end
-								end
-								
-								-- Clear dropdown values
-								SaveManager.Options.SaveManager_ConfigList:SetValues({})
-								SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
-								
-								self.Library:Notify({
-									Title = "Interface",
-									Content = "Config Deletion",
-									SubContent = string.format("Deleted %d configuration files", deletedCount),
-									Duration = 7
-								})
-							end
-						},
-						{
-							Title = "No",
-							Callback = function() end
-						}
-					}
+				-- Get all config files
+				local configFolder = `{self.Folder}/settings`
+				local list = listfiles(configFolder)
+				local deletedCount = 0
+				
+				-- Delete each .json config file
+				for _, filePath in ipairs(list) do
+					if filePath:sub(-5) == ".json" then
+						pcall(function() 
+							delfile(filePath)
+							deletedCount = deletedCount + 1
+						end)
+					end
+				end
+				
+				-- Also delete autoload file if it exists
+				if isfile(`{configFolder}/autoload.txt`) then
+					delfile(`{configFolder}/autoload.txt`)
+				end
+				
+				-- Clear dropdown values
+				SaveManager.Options.SaveManager_ConfigList:SetValues({})
+				SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
+				
+				-- Update autoload button description
+				if AutoloadButton then
+					AutoloadButton:SetDesc("Current autoload config: none")
+				end
+				
+				self.Library:Notify({
+					Title = "Config Deletion",
+					Content = "All configurations deleted",
+					SubContent = string.format("%d configuration files removed", deletedCount),
+					Duration = 7
 				})
 			end
 		})
