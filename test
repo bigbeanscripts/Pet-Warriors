@@ -365,17 +365,55 @@ local SaveManager = {} do
 
 		section:AddButton({
 			Title = "Clear Config List",
-			Description = "Remove all values from the config dropdown",
+			Description = "Delete all config files from disk",
 			Callback = function()
-				-- Clear the config list dropdown values
-				SaveManager.Options.SaveManager_ConfigList:SetValues({})
-				SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
-				
-				self.Library:Notify({
-					Title = "Interface",
-					Content = "Config List",
-					SubContent = "Config dropdown values have been cleared",
-					Duration = 5
+				-- Show confirmation dialog before deletion
+				self.Library:Dialog({
+					Title = "Delete All Configurations",
+					Content = "Are you sure you want to delete ALL saved configurations? This cannot be undone.",
+					Buttons = {
+						{
+							Title = "Yes",
+							Callback = function()
+								-- Get all config files
+								local list = listfiles(`{self.Folder}/settings`)
+								local deletedCount = 0
+								
+								-- Delete each .json config file
+								for _, filePath in ipairs(list) do
+									if filePath:sub(-5) == ".json" and not filePath:find("options.json") then
+										pcall(function() 
+											delfile(filePath)
+											deletedCount = deletedCount + 1
+										end)
+									end
+								end
+								
+								-- Also clear autoload if it exists
+								if isfile(`{self.Folder}/settings/autoload.txt`) then
+									delfile(`{self.Folder}/settings/autoload.txt`)
+									if AutoloadButton then
+										AutoloadButton:SetDesc("Current autoload config: none")
+									end
+								end
+								
+								-- Clear dropdown values
+								SaveManager.Options.SaveManager_ConfigList:SetValues({})
+								SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
+								
+								self.Library:Notify({
+									Title = "Interface",
+									Content = "Config Deletion",
+									SubContent = string.format("Deleted %d configuration files", deletedCount),
+									Duration = 7
+								})
+							end
+						},
+						{
+							Title = "No",
+							Callback = function() end
+						}
+					}
 				})
 			end
 		})
