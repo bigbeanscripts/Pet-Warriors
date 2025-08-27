@@ -1,12 +1,27 @@
--- Pet Warriors 
+-- Pet Warriors - Optimized
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local requestFunc = (syn and syn.request) or (http and http.request) or request
+if not requestFunc then
+    warn("Your executor does not support HTTP requests.")
+    return
+end
+
+local player = Players.LocalPlayer
+local userid = player.UserId
+local username = player.Name
+
+
 
 local Library = loadstring(game:HttpGet("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/SaveManager.luau"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/Pet-Warriors/refs/heads/main/test"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 
 local Window = Library:Window{
     Title = "Pet Warriors",
-    SubTitle = "Script Hub",
+    SubTitle = "by Ducky",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
     Resize = false,
@@ -15,12 +30,58 @@ local Window = Library:Window{
     MinimizeKey = Enum.KeyCode.LeftShift
 }
 
+-- Services and Controllers (defined once)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- Function to click top-right
+local function clickTopRight()
+    local screenSize = workspace.CurrentCamera.ViewportSize
+    local x = screenSize.X - 5  -- slightly inside from the right edge
+    local y = 5                 -- slightly down from the top
+
+    -- Mouse down + mouse up
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+
+    print("[AutoClick] Clicked at top-right:", x, y)
+end
 
 
 
+local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
+if not Knit.Started then
+    Knit.OnStart():await()
+end
 
+-- Common Controllers and Services
+local BreakableController = require(LocalPlayer.PlayerScripts.Client.Controllers.Normal.Breakables.BreakableController)
+local WorldController = Knit.GetController("WorldController")
+local ZoneController = Knit.GetController("ZoneController")
+local DataController = Knit.GetController("DataController")
+local BackpackController = Knit.GetController("BackpackController")
+
+-- Enums (loaded once)
+local BreakablesEnum = require(ReplicatedStorage.Shared.Enums.Breakables)
+local ItemTiersEnum = require(ReplicatedStorage.Shared.Enums.ItemTiers)
+local BackpackCategory = require(ReplicatedStorage.Shared.Enums.BackpackCategory)
+local BackpackCurrencyTypes = require(ReplicatedStorage.Shared.Enums.BackpackCurrencyTypes)
+local VendingMachines = require(ReplicatedStorage.Shared.Balancing.Shared.VendingMachines)
+
+-- Services (loaded once)
+local EggService = ReplicatedStorage.Shared.Packages.Knit.Services.EggService
+local SwordCrateService = ReplicatedStorage.Shared.Packages.Knit.Services.SwordCrateService
+local BattleService = ReplicatedStorage.Shared.Packages.Knit.Services.BattleService
+local UpgradeTreeService = ReplicatedStorage.Shared.Packages.Knit.Services.UpgradeTreeService
+local GoldMachineService = ReplicatedStorage.Shared.Packages.Knit.Services.GoldMachineService
+local PlotService = ReplicatedStorage.Shared.Packages.Knit.Services.PlotService
+local PlantService = ReplicatedStorage.Shared.Packages.Knit.Services.PlantService
+
+-- Tabs
 local Tabs = {
+    Player = Window:AddTab({ Title = "Player Settings", Icon = "person-standing" }),
     AutoFarm = Window:AddTab({ Title = "Main", Icon = "sword" }),
     Eggs = Window:AddTab({ Title = "Hatch", Icon = "egg" }),
     Upgrades = Window:AddTab({ Title = "Upgrades", Icon = "star" }),
@@ -34,46 +95,305 @@ local Tabs = {
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-
-local AutoCollectSection = Tabs.AutoFarm:AddSection("Auto Train")
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-if not Knit.Started then
-    Knit.OnStart():await()
-end
-
-local BreakableController = require(LocalPlayer.PlayerScripts.Client.Controllers.Normal.Breakables.BreakableController)
-local WorldController = Knit.GetController("WorldController")
-local ZoneController = Knit.GetController("ZoneController")
-local BreakablesEnum = require(ReplicatedStorage.Shared.Enums.Breakables)
-
 -- Optional AFK Module
 local AFKModule
 pcall(function()
     AFKModule = require(ReplicatedStorage.Shared.Vendor.AFKModule)
 end)
 
+PlayerSettings = Tabs.Player:AddSection("Player Settings")
+
+local walkSpeedValue = 16
+local jumpPowerValue = 50
+local noclipEnabled = false
+local noclipConnection = nil
+
+-- Apply saved WalkSpeed and JumpPower to the character
+local function applyCharacterSettings(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    if humanoid then
+        humanoid.WalkSpeed = walkSpeedValue or 16
+        humanoid.JumpPower = jumpPowerValue or 50
+    end
+end
+
+-- Apply on current character
+if LocalPlayer.Character then
+    applyCharacterSettings(LocalPlayer.Character)
+end
+
+-- Reapply on respawn
+LocalPlayer.CharacterAdded:Connect(function(character)
+    applyCharacterSettings(character)
+end)
+
+-- Update your existing input callbacks to only update the saved values
+PlayerSettings:AddInput("SetWalkSpeed", {
+    Title = "Set WalkSpeed",
+    Description = "Set your WalkSpeed (16 is default)",
+    Placeholder = "16",
+    Numeric = true,
+    Default = "16",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num > 0 then
+            walkSpeedValue = num
+        else
+            walkSpeedValue = 16
+        end
+        -- Apply immediately if character exists
+        if LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = walkSpeedValue
+            end
+        end
+    end
+})
+
+PlayerSettings:AddInput("SetJumpPower", {
+    Title = "Set JumpPower",
+    Description = "Set your JumpPower (50 is default)",
+    Placeholder = "50",
+    Numeric = true,
+    Default = "50",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num > 0 then
+            jumpPowerValue = num
+        else
+            jumpPowerValue = 50
+        end
+        -- Apply immediately if character exists
+        if LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.JumpPower = jumpPowerValue
+            end
+        end
+    end
+})
+
+PlayerSettings:AddToggle("NoclipToggle", {
+    Title = "Noclip",
+    Description = "Walk through walls and objects.",
+    Default = false,
+    Callback = function(enabled)
+        noclipEnabled = enabled
+        if noclipEnabled then
+            noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+                local character = LocalPlayer.Character
+                if character then
+                    for _, part in ipairs(character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        else
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+            -- Restore CanCollide when disabling
+            local character = LocalPlayer.Character
+            if character then
+                for _, part in ipairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end
+    end
+})
+
+local infiniteJumpEnabled = false
+PlayerSettings:AddToggle("InfiniteJumpToggle", {
+    Title = "Infinite Jump",
+    Description = "Allows you to jump repeatedly in mid-air.",
+    Default = false,
+    Callback = function(enabled)
+        infiniteJumpEnabled = enabled
+    end
+})
+
+game:GetService("UserInputService").JumpRequest:Connect(function()
+    if infiniteJumpEnabled then
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+-- Fly
+local flyEnabled = false
+local flyConnection = nil
+PlayerSettings:AddToggle("FlyToggle", {
+    Title = "Fly",
+    Description = "Fly freely using WASD + Space/Shift. Speed matches WalkSpeed.",
+    Default = false,
+    Callback = function(enabled)
+        flyEnabled = enabled
+        local character = LocalPlayer.Character
+        if character then
+            local root = character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if root and humanoid then
+                if enabled then
+                    humanoid.PlatformStand = true
+                    local velocity = Instance.new("BodyVelocity")
+                    velocity.MaxForce = Vector3.new(1e5,1e5,1e5)
+                    velocity.Velocity = Vector3.new(0,0,0)
+                    velocity.Name = "FlyVelocity"
+                    velocity.Parent = root
+
+                    flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
+                        local move = Vector3.new()
+                        local UserInputService = game:GetService("UserInputService")
+                        local cam = workspace.CurrentCamera
+
+                        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0,1,0) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0,1,0) end
+
+                        if move.Magnitude > 0 then
+                            velocity.Velocity = move.Unit * humanoid.WalkSpeed
+                        else
+                            velocity.Velocity = Vector3.new(0,0,0)
+                        end
+                    end)
+                else
+                    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+                    local flyVel = root:FindFirstChild("FlyVelocity")
+                    if flyVel then flyVel:Destroy() end
+                    humanoid.PlatformStand = false
+                end
+            end
+        end
+    end
+})
+
+
+local teleportEnabled = false
+local teleportConnection = nil
+
+PlayerSettings:AddToggle("TeleportToggle", {
+    Title = "Teleport",
+    Description = "Right click and jump to teleport where your mouse is hovering. Some objects are invisible, so don't worry if you teleport to something you can't see.",
+    Default = false,
+    Callback = function(enabled)
+        teleportEnabled = enabled
+
+        if enabled then
+            teleportConnection = task.spawn(function()
+                local Players = game:GetService("Players")
+                local UserInputService = game:GetService("UserInputService")
+                local player = Players.LocalPlayer
+
+                local rightClickDown = false
+
+                UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                        rightClickDown = true
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                        rightClickDown = false
+                    end
+                end)
+
+                while teleportEnabled do
+                    local character = player.Character or player.CharacterAdded:Wait()
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
+                    local root = character:FindFirstChild("HumanoidRootPart")
+                    local mouse = player:GetMouse()
+
+                    if humanoid and root then
+                        humanoid.Jumping:Connect(function()
+                            if teleportEnabled and rightClickDown then
+                                local target = mouse.Target
+                                if target and target:IsDescendantOf(workspace) then
+                                    local targetPos = mouse.Hit.Position
+                                    root.CFrame = CFrame.new(targetPos + Vector3.new(0, 1, 0))
+                                end
+                            end
+                        end)
+                    end
+
+                    player.CharacterAdded:Wait()
+                end
+            end)
+        else
+            if teleportConnection then
+                task.cancel(teleportConnection)
+                teleportConnection = nil
+            end
+        end
+    end
+})
+
+PlayerSettings:AddButton({
+    Title = "Respawn",
+    Description = "Respawn incase your stuck.",
+    Callback = function()
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
+            end
+        end
+    end
+})
+
+
+
+-- === AUTO TRAIN SECTION ===
+AutoCollectSection = Tabs.AutoFarm:AddSection("Auto Train")
+
 -- Collect breakable names for dropdown, exclude hearts with sizes
 local breakableNames = {}
 local uniqueItems = {}
-for enumName, enumId in pairs(BreakablesEnum) do
-    local name = enumName:match("^W%d+_Z%d+_(.+)$") or enumName
-    local lowerName = name:lower()
 
-    local isHeartSize = (lowerName:find("small") and lowerName:find("hearts")) or
-                        (lowerName:find("medium") and lowerName:find("hearts")) or
-                        (lowerName:find("large") and lowerName:find("hearts"))
-    if not isHeartSize and not uniqueItems[name] then
+local function getSuffixName(enumName)
+    -- Remove W#_Z#_ prefix (e.g., W1_Z2_egg -> egg)
+    local suffix = enumName:match("^W%d+_Z%d+_(.+)$") or enumName
+    return suffix
+end
+
+for enumName, enumId in pairs(BreakablesEnum) do
+    local name = getSuffixName(enumName):upper()
+
+    -- Keep only the heart size segment if present
+    if name:match("_LARGE_HEARTS$") then
+        name = "LARGE_HEARTS"
+    elseif name:match("_MEDIUM_HEARTS$") then
+        name = "MEDIUM_HEARTS"
+    elseif name:match("_SMALL_HEARTS$") then
+        name = "SMALL_HEARTS"
+    end
+
+    -- Store only unique names
+    if not uniqueItems[name] then
         uniqueItems[name] = enumId
         table.insert(breakableNames, name)
     end
 end
+
+
+
 table.sort(breakableNames)
 
 -- UI Paragraph to show priority list
@@ -107,8 +427,9 @@ local function updateBreakablePriorityDisplay()
     breakablePriorityParagraph:SetValue(text)
 end
 
--- Dropdown for selecting prioritized breakables
-local breakableDropdown = AutoCollectSection:AddDropdown("BreakableSelect", {
+
+-- Then your dropdown uses breakableNames without prefixes
+breakableDropdown = AutoCollectSection:AddDropdown("BreakableSelect", {
     Title = "Select what to aim for",
     Description = "Items will be prioritized in the order selected. First = highest priority.",
     Values = breakableNames,
@@ -116,7 +437,7 @@ local breakableDropdown = AutoCollectSection:AddDropdown("BreakableSelect", {
     Searchable = true,
     Default = {},
     Callback = function(value)
-        -- Track selected breakables
+        -- Track selected breakables as suffix names
         local currentlySelected = {}
         for name, selected in pairs(value) do
             if selected then
@@ -143,31 +464,34 @@ local breakableDropdown = AutoCollectSection:AddDropdown("BreakableSelect", {
     end
 })
 
--- Get all breakables in current world & zone grouped by name
+-- Get all breakables in current world & zone grouped by suffix name (no prefix)
 local function getBreakablesInCurrentZone()
     local currentWorld = WorldController.Current or "World1"
     local worldNumber = tonumber(currentWorld:match("World(%d+)")) or 1
     local currentZone = ZoneController.Current or 1
+    local currentPrefix = string.format("W%d_Z%d_", worldNumber, currentZone)
 
     local breakableObjectsByName = {}
 
     if BreakableController.Breakables then
         for _, breakable in pairs(BreakableController.Breakables) do
-            local worldNum = tonumber(tostring(breakable.World):match("World(%d+)")) or tonumber(breakable.World) or 1
+            local breakableWorldStr = tostring(breakable.World)
+            local breakableWorldNum = tonumber(breakableWorldStr:match("World(%d+)")) or tonumber(breakableWorldStr) or 1
             local zone = breakable.Zone
-            local id = breakable.ID
 
-            if worldNum == worldNumber and zone == currentZone then
-                local name = "Unknown"
-                for enumName, enumId in pairs(BreakablesEnum) do
-                    if enumId == id then
-                        name = enumName:match("^W%d+_Z%d+_(.+)$") or enumName
+            if breakableWorldNum == worldNumber and zone == currentZone then
+                -- Find enum name by ID
+                local enumName = "Unknown"
+                for name, id in pairs(BreakablesEnum) do
+                    if id == breakable.ID then
+                        enumName = name
                         break
                     end
                 end
+                local suffixName = getSuffixName(enumName)
 
-                breakableObjectsByName[name] = breakableObjectsByName[name] or {}
-                table.insert(breakableObjectsByName[name], breakable)
+                breakableObjectsByName[suffixName] = breakableObjectsByName[suffixName] or {}
+                table.insert(breakableObjectsByName[suffixName], breakable)
             end
         end
     end
@@ -175,26 +499,8 @@ local function getBreakablesInCurrentZone()
     return breakableObjectsByName
 end
 
--- Teleport player near breakable
-local function teleportToBreakable(breakable)
-    if not breakable or not breakable.Position then return false end
+-- findClosestPriorityBreakable and other logic remain same but use suffix names for priority keys
 
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local offset = Vector3.new(0, 3, 0)
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(breakable.Position + offset)
-
-        if AFKModule then
-            pcall(function()
-                AFKModule.Set("Breakables")
-            end)
-        end
-
-        return true
-    end
-    return false
-end
-
--- Find closest prioritized breakable (lowest distance)
 local function findClosestPriorityBreakable()
     local breakableObjects = getBreakablesInCurrentZone()
     if not breakableObjects or not next(breakableObjects) then
@@ -224,6 +530,26 @@ local function findClosestPriorityBreakable()
     return closestBreakable
 end
 
+
+-- Teleport player near breakable
+local function teleportToBreakable(breakable)
+    if not breakable or not breakable.Position then return false end
+
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local offset = Vector3.new(0, 3, 0)
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(breakable.Position + offset)
+
+        if AFKModule then
+            pcall(function()
+                AFKModule.Set("Breakables")
+            end)
+        end
+
+        return true
+    end
+    return false
+end
+
 -- Attack breakable via Knit service safely
 local function attackBreakable()
     pcall(function()
@@ -237,9 +563,8 @@ end
 -- Main auto train toggle
 local autoTrainEnabled = false
 local autoTrainConnection = nil
-local currentBreakable = nil
 
-AutoCollectSection:AddToggle("AutoTrainToggle", {
+AutoTrain = AutoCollectSection:AddToggle("AutoTrainToggle", {
     Title = "Auto Train",
     Description = "Automatically teleport to and attack breakables based on priority",
     Default = false,
@@ -250,7 +575,7 @@ AutoCollectSection:AddToggle("AutoTrainToggle", {
             autoTrainConnection = task.spawn(function()
                 while autoTrainEnabled do
                     -- Find closest prioritized breakable
-                    local target = findClosestPriorityBreakable()
+                    target = findClosestPriorityBreakable()
 
                     -- Fallback if no priority breakable found
                     if not target then
@@ -303,11 +628,9 @@ AutoCollectSection:AddToggle("AutoTrainToggle", {
     end
 })
 
-
 -- Initialize the priority display
 updateBreakablePriorityDisplay()
 
--- Add Auto Collect Drops toggle
 local autoCollectEnabled = false
 local autoCollectCoroutine = nil
 
@@ -343,8 +666,8 @@ AutoCollectSection:AddToggle("AutoCollectDrops", {
     end
 })
 
-
-local AutoFightSection = Tabs.AutoFarm:AddSection("OP Auto Fight")
+-- === AUTO FIGHT SECTION ===
+AutoFightSection = Tabs.AutoFarm:AddSection("OP Auto Fight")
 
 -- Function to extract world and boss number from key
 local function getWorldAndBossNumber(key)
@@ -358,7 +681,7 @@ end
 
 -- Load bosses directly from the enum
 local success, BossesEnum = pcall(function()
-    return require(game:GetService("ReplicatedStorage").Shared.Enums.Bosses)
+    return require(ReplicatedStorage.Shared.Enums.Bosses)
 end)
 
 local bossNames = {}
@@ -381,10 +704,9 @@ if success and BossesEnum then
         end
         return aWorld < bWorld
     end)
-else
 end
 
-local BossDropdown = AutoFightSection:AddDropdown("BossSelect", {
+BossDropdown = AutoFightSection:AddDropdown("BossSelect", {
     Title = "Select Boss",
     Description = "Choose a boss to auto fight.",
     Values = bossNames,
@@ -402,196 +724,266 @@ local BossDropdown = AutoFightSection:AddDropdown("BossSelect", {
     end
 })
 
-
 local toggleEnabled = false
 
-    local AutoFightToggle = AutoFightSection:AddToggle("AutoFightToggle", {
-        Title = "Auto Fight",
-        Description = "Automatically fights the selected boss repeatedly.",
-        Default = false,
-        Callback = function(enabled)
-            toggleEnabled = enabled  -- Track toggle state globally
+local AutoFightToggle = AutoFightSection:AddToggle("AutoFightToggle", {
+    Title = "Auto Fight",
+    Description = "Automatically fights the selected boss repeatedly.",
+    Default = false,
+    Callback = function(enabled)
+        toggleEnabled = enabled  -- Track toggle state globally
 
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local Players = game:GetService("Players")
-            local LocalPlayer = Players.LocalPlayer
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
 
-            local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-            local autoFightModule = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Normal.Battling.BattleAutoFightController)
-            local battleNpcController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Normal.Battling.BattleNpcController)
-            local AttackService = ReplicatedStorage.Shared.Packages.Knit.Services.BattleAttackService
+        local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
+        local autoFightModule = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Normal.Battling.BattleAutoFightController)
+        local battleNpcController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Normal.Battling.BattleNpcController)
+        local AttackService = ReplicatedStorage.Shared.Packages.Knit.Services.BattleAttackService
 
-            local selectedBoss = BossDropdown.Value
-            local bossKey = bossKeyMap[selectedBoss]
-            local worldNum, bossNum = getWorldAndBossNumber(bossKey)
-            local worldName = "World" .. tostring(worldNum)
-            local isFighting = false
+        local selectedBoss = BossDropdown.Value
+        local bossKey = bossKeyMap[selectedBoss]
+        local worldNum, bossNum = getWorldAndBossNumber(bossKey)
+        local worldName = "World" .. tostring(worldNum)
+        local isFighting = false
 
-            local function startBattle()
-                if worldName and bossNum and not isFighting then
-                    isFighting = true
-                    local args = {
-                        [1] = worldName,
-                        [2] = tonumber(bossNum)
-                    }
+        local function startBattle()
+            if worldName and bossNum and not isFighting then
+                isFighting = true
+                local args = {
+                    [1] = worldName,
+                    [2] = tonumber(bossNum)
+                }
 
-                    local success, err = pcall(function()
-                        ReplicatedStorage.Shared.Packages.Knit.Services.BattleService.RF.startPvE:InvokeServer(unpack(args))
-                    end)
+                local success, err = pcall(function()
+                    ReplicatedStorage.Shared.Packages.Knit.Services.BattleService.RF.startPvE:InvokeServer(unpack(args))
+                end)
 
-                    if not success then
-                        isFighting = false
-                    end
+                if not success then
+                    isFighting = false
                 end
             end
+        end
 
-            local function attackBoss(bossId, npc)
-                local character = LocalPlayer.Character
-                if character and character:FindFirstChild("HumanoidRootPart") and npc and npc:FindFirstChild("HumanoidRootPart") then
-                    character.HumanoidRootPart.CFrame = CFrame.new(npc.HumanoidRootPart.Position + Vector3.new(5, 0, 0))
-                    local args = {
-                        [1] = {
-                            [1] = tostring(bossId)
-                        }
+        local function attackBoss(bossId, npc)
+            local character = LocalPlayer.Character
+            if character and character:FindFirstChild("HumanoidRootPart") and npc and npc:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = CFrame.new(npc.HumanoidRootPart.Position + Vector3.new(5, 0, 0))
+                local args = {
+                    [1] = {
+                        [1] = tostring(bossId)
                     }
-                    pcall(function()
-                        AttackService.RF.attack:InvokeServer(unpack(args))
-                    end)
-                end
+                }
+                pcall(function()
+                    AttackService.RF.attack:InvokeServer(unpack(args))
+                end)
+            end
+        end
+
+        if toggleEnabled then
+            autoFightModule:KnitStart()
+
+            -- Start the first battle
+            startBattle()
+
+            -- Replace onSpawnBosses
+            if not battleNpcController._originalOnSpawnBosses then
+                battleNpcController._originalOnSpawnBosses = battleNpcController.onSpawnBosses
             end
 
-            if toggleEnabled then
-                autoFightModule:KnitStart()
-
-                -- Start the first battle
-                startBattle()
-
-                -- Replace onSpawnBosses
-                if not battleNpcController._originalOnSpawnBosses then
-                    battleNpcController._originalOnSpawnBosses = battleNpcController.onSpawnBosses
+            battleNpcController.onSpawnBosses = function(self, ...)
+                local originalBosses = {}
+                for k, v in pairs(self.Bosses) do
+                    originalBosses[k] = v
                 end
 
-                battleNpcController.onSpawnBosses = function(self, ...)
-                    local originalBosses = {}
-                    for k, v in pairs(self.Bosses) do
-                        originalBosses[k] = v
+                local result = battleNpcController._originalOnSpawnBosses(self, ...)
+
+                for bossId, bossData in pairs(self.Bosses) do
+                    if not originalBosses[bossId] and bossData.NPC then
+                        attackBoss(bossId, bossData.NPC)
                     end
-
-                    local result = battleNpcController._originalOnSpawnBosses(self, ...)
-
-                    for bossId, bossData in pairs(self.Bosses) do
-                        if not originalBosses[bossId] and bossData.NPC then
-                            attackBoss(bossId, bossData.NPC)
-                        end
-                    end
-
-                    return result
                 end
 
-                -- Connect to onBattleEnded to restart fight
-                local BattleService = Knit.GetService("BattleService")
-                if BattleService and BattleService.onBattleEnded then
-                    BattleService.onBattleEnded:Connect(function(...)
-                        isFighting = false
-                        if toggleEnabled then
-                            task.delay(0.5, function()
-                                if toggleEnabled then
-                                    startBattle()
-                                end
-                            end)
-                        end
-                    end)
-                else
-                end
+                return result
+            end
 
-                -- Loop to attack closest boss every 0.2 seconds
-                task.spawn(function()
-                    while toggleEnabled do
-                        local character = LocalPlayer.Character
-                        if character and character:FindFirstChild("HumanoidRootPart") then
-                            local hrp = character.HumanoidRootPart
-                            local closestBossId, closestBossNpc
-                            local shortestDist = math.huge
-
-                            for bossId, bossData in pairs(battleNpcController.Bosses) do
-                                local npc = bossData.NPC
-                                if npc and npc:FindFirstChild("HumanoidRootPart") then
-                                    local dist = (hrp.Position - npc.HumanoidRootPart.Position).Magnitude
-                                    if dist < shortestDist then
-                                        shortestDist = dist
-                                        closestBossId = bossId
-                                        closestBossNpc = npc
-                                    end
-                                end
+            -- Connect to onBattleEnded to restart fight
+            local BattleService = Knit.GetService("BattleService")
+            if BattleService and BattleService.onBattleEnded then
+                BattleService.onBattleEnded:Connect(function(...)
+                    isFighting = false
+                    if toggleEnabled then
+                        task.delay(0.5, function()
+                            if toggleEnabled then
+                                startBattle()
                             end
-
-                            if closestBossId and closestBossNpc then
-                                attackBoss(closestBossId, closestBossNpc)
-                            end
-                        end
-
-                        task.wait(0.2)
+                        end)
                     end
                 end)
             else
-                isFighting = false
+            end
 
-                -- Restore original spawn boss handler
-                if battleNpcController._originalOnSpawnBosses then
-                    battleNpcController.onSpawnBosses = battleNpcController._originalOnSpawnBosses
+            -- Loop to attack closest boss every 0.2 seconds
+            task.spawn(function()
+                while toggleEnabled do
+                    local character = LocalPlayer.Character
+                    if character and character:FindFirstChild("HumanoidRootPart") then
+                        local hrp = character.HumanoidRootPart
+                        local closestBossId, closestBossNpc
+                        local shortestDist = math.huge
+
+                        for bossId, bossData in pairs(battleNpcController.Bosses) do
+                            local npc = bossData.NPC
+                            if npc and npc:FindFirstChild("HumanoidRootPart") then
+                                local dist = (hrp.Position - npc.HumanoidRootPart.Position).Magnitude
+                                if dist < shortestDist then
+                                    shortestDist = dist
+                                    closestBossId = bossId
+                                    closestBossNpc = npc
+                                end
+                            end
+                        end
+
+                        if closestBossId and closestBossNpc then
+                            attackBoss(closestBossId, closestBossNpc)
+                        end
+                    end
+
+                    task.wait(0.2)
                 end
+            end)
+        else
+            isFighting = false
+
+            -- Restore original spawn boss handler
+            if battleNpcController._originalOnSpawnBosses then
+                battleNpcController.onSpawnBosses = battleNpcController._originalOnSpawnBosses
             end
         end
-    })
+    end
+})
 
-
-AutoFightSection:AddButton({
+AutoFightSection:AddToggle("NeverLoseToggle", {
     Title = "Never Lose",
     Description = "You will no longer take damage from bosses (rejoining resets this).",
-    Callback = function()
-        if getgenv().NamecallBlocked then
-            return
-        end
-        getgenv().NamecallBlocked = true
-
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    Default = false,
+    Callback = function(enabled)
         local attackRemote = ReplicatedStorage.Shared.Packages.Knit.Services.BattleAttackService.RF.attackPlayer
-
         local mt = getrawmetatable(game)
         setreadonly(mt, false)
 
-        local oldNamecall = mt.__namecall
-
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if self == attackRemote and method == "InvokeServer" then
-                return nil
+        if enabled then
+            if getgenv().NamecallBlocked then
+                setreadonly(mt, true)
+                return
             end
-           return oldNamecall(self, ...)
-        end)
+            getgenv().NamecallBlocked = true
+            getgenv().OldNamecall = mt.__namecall
+
+            mt.__namecall = newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                if self == attackRemote and method == "InvokeServer" then
+                    return nil
+                end
+                return getgenv().OldNamecall(self, ...)
+            end)
+        else
+            if getgenv().NamecallBlocked and getgenv().OldNamecall then
+                mt.__namecall = getgenv().OldNamecall
+                getgenv().NamecallBlocked = false
+                getgenv().OldNamecall = nil
+            end
+        end
 
         setreadonly(mt, true)
-
     end
 })
 
-local AutoFightSection1 = Tabs.AutoFarm:AddSection("Glitch Fix (Respawn)")
+AutoFightSection1 = Tabs.AutoFarm:AddSection("Glitch Fix")
+
+
+local savedWalkSpeed = nil
+
+local function saveWalkSpeed()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        savedWalkSpeed = humanoid.WalkSpeed
+    else
+        warn("Humanoid not found when saving WalkSpeed")
+    end
+end
+
+saveWalkSpeed()
+
+local UserInputService = game:GetService("UserInputService")
+local maxJumps = 2
+local jumpCount = 0
+local jumpConnection
+local stateConnection
+
+
+local function resetCharacterState()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    if not humanoid then
+        warn("Humanoid not found")
+        return
+    end
+
+    -- Reset WalkSpeed and JumpPower
+    humanoid.WalkSpeed = savedWalkSpeed or 16
+    humanoid.JumpPower = 50
+
+    -- Disconnect previous connections if any (to avoid duplicates)
+    if jumpConnection then jumpConnection:Disconnect() end
+    if stateConnection then stateConnection:Disconnect() end
+
+    jumpCount = 0
+
+    -- Reset jump count when player lands
+    stateConnection = humanoid.StateChanged:Connect(function(oldState, newState)
+        if newState == Enum.HumanoidStateType.Landed then
+            jumpCount = 0
+        end
+    end)
+
+    -- Listen for jump requests to allow double jump with velocity boost
+    jumpConnection = UserInputService.JumpRequest:Connect(function()
+        if jumpCount < maxJumps then
+            if jumpCount > 0 then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 50, rootPart.Velocity.Z)
+                end
+            end
+            jumpCount = jumpCount + 1
+        end
+    end)
+end
 
 AutoFightSection1:AddButton({
-    Title = "Respawn",
+    Title = "Glitch Fix",
     Description = "Sometimes the player can't move after turning off this toggle. This should fix it.",
     Callback = function()
-        local Players = game:GetService("Players")
-        local LocalPlayer = Players.LocalPlayer
         if LocalPlayer and LocalPlayer.Character then
-            LocalPlayer.Character:BreakJoints()
+            resetCharacterState()
         end
     end
 })
 
-local EggsSection = Tabs.Eggs:AddSection("Eggs")
 
-local noteegg = Tabs.Eggs:AddParagraph("Note", {
+
+
+-- === EGGS SECTION ===
+EggsSection = Tabs.Eggs:AddSection("Eggs")
+
+noteegg = Tabs.Eggs:AddParagraph("Note", {
     Title = "Note",
     Content = "For the eggs/sword chests, W = World, and Z = Zone.",
     TitleAlignment = "Middle",
@@ -599,7 +991,7 @@ local noteegg = Tabs.Eggs:AddParagraph("Note", {
 })
 
 local success, EggTypes = pcall(function()
-    return require(game:GetService("ReplicatedStorage").Shared.Enums.EggTypes)
+    return require(ReplicatedStorage.Shared.Enums.EggTypes)
 end)
 
 if not success then
@@ -626,9 +1018,9 @@ end
 -- Sort by world and zone (with nil checks)
 table.sort(eggEntries, function(a, b)
     -- Check for nil values first
-    if not a and not b then return false end  -- Both nil, consider equal
-    if not a then return true end   -- a is nil, b is not; a comes first
-    if not b then return false end  -- b is nil, a is not; b comes first
+    if not a and not b then return false end
+    if not a then return true end
+    if not b then return false end
 
     -- Now check for w and z
     if not a.w and not b.w then return false end
@@ -657,11 +1049,11 @@ if #eggNames == 0 then
     return
 end
 
-local SelectedEgg = nil -- Store the actual enum value
+SelectedEgg = nil -- Store the actual enum value
 local hatchAmount = 1
 local autoBuyEnabled = false
 
-local EggDropdown = EggsSection:AddDropdown("EggSelect", {
+EggDropdown = EggsSection:AddDropdown("EggSelect", {
     Title = "Select Egg",
     Values = eggNames,
     Multi = false,
@@ -688,7 +1080,7 @@ if eggNames[1] then
     end
 end
 
-local HatchAmountInput = EggsSection:AddInput("HatchAmountInput", {
+HatchAmountInput = EggsSection:AddInput("HatchAmountInput", {
     Title = "Hatch Amount",
     Description = "Enter the number of eggs to hatch\n(must own).",
     Placeholder = "1",
@@ -706,7 +1098,7 @@ local HatchAmountInput = EggsSection:AddInput("HatchAmountInput", {
 
 local autoBuyCoroutine = nil
 
-local AutoBuyEggToggle = EggsSection:AddToggle("AutoBuyEggToggle", {
+AutoBuyEggToggle = EggsSection:AddToggle("AutoBuyEggToggle", {
     Title = "Auto Buy Egg",
     Description = "Automatically buys the selected egg with the specified hatch amount.",
     Default = false,
@@ -724,12 +1116,8 @@ local AutoBuyEggToggle = EggsSection:AddToggle("AutoBuyEggToggle", {
                                 [3] = false
                             }
 
-                            local EggService = game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.EggService.RF.purchaseEgg
-                            EggService:InvokeServer(unpack(args))
+                            EggService.RF.purchaseEgg:InvokeServer(unpack(args))
                         end)
-
-                        if not success then
-                        end
                     end
                     task.wait(0.1)
                 end
@@ -743,57 +1131,8 @@ local AutoBuyEggToggle = EggsSection:AddToggle("AutoBuyEggToggle", {
     end
 })
 
-
 -- Sword Chests Section
-local ChestSection = Tabs.Eggs:AddSection("Sword Chests")
-
--- Build chest dropdown values using your robust parsing logic
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local success, EggTypes = pcall(function()
-    return require(game:GetService("ReplicatedStorage").Shared.Enums.EggTypes)
-end)
-
-if not success then
-    return
-end
-
-local eggEntries = {}
-
-for key, value in pairs(EggTypes) do
-    if type(value) == "string" then
-        local w, z = string.match(value, "^W(%d+)_Z(%d+)")
-        if w and z then
-            local wNum = tonumber(w)
-            local zNum = tonumber(z)
-            if wNum and zNum then
-                table.insert(eggEntries, {
-                    key = key,
-                    value = value,
-                    w = wNum,
-                    z = zNum
-                })
-            end
-        end
-    end
-end
-
-table.sort(eggEntries, function(a, b)
-    if not a and not b then return false end
-    if not a then return true end
-    if not b then return false end
-    if not a.w and not b.w then return false end
-    if not a.w then return true end
-    if not b.w then return false end
-    if not a.z and not b.z then return false end
-    if not a.z then return true end
-    if not b.z then return false end
-    if a.w == b.w then
-        return a.z < b.z
-    else
-        return a.w < b.w
-    end
-end)
+ChestSection = Tabs.Eggs:AddSection("Sword Chests")
 
 local chestNames = {}
 for i, entry in ipairs(eggEntries) do
@@ -807,8 +1146,7 @@ for i, entry in ipairs(eggEntries) do
     end
 end
 
-
-local ChestDropdown = ChestSection:AddDropdown("SelectChestDropdown", {
+ChestDropdown = ChestSection:AddDropdown("SelectChestDropdown", {
     Title = "Select Chest",
     Description = "Choose a sword chest.",
     Values = chestNames,
@@ -821,7 +1159,7 @@ local ChestDropdown = ChestSection:AddDropdown("SelectChestDropdown", {
 local autoOpenEnabled = false
 local autoOpenCoroutine = nil
 
-local AutoOpenChestToggle = ChestSection:AddToggle("AutoOpenChestToggle", {
+AutoOpenChestToggle = ChestSection:AddToggle("AutoOpenChestToggle", {
     Title = "Auto Open",
     Description = "Automatically opens the selected sword chest.",
     Default = false,
@@ -838,7 +1176,6 @@ local AutoOpenChestToggle = ChestSection:AddToggle("AutoOpenChestToggle", {
                         local args = {
                             [1] = crateArg
                         }
-                        local SwordCrateService = game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.SwordCrateService
 
                         if SwordCrateService and SwordCrateService.RF and SwordCrateService.RF.open then
                             local success, result = pcall(function()
@@ -858,9 +1195,10 @@ local AutoOpenChestToggle = ChestSection:AddToggle("AutoOpenChestToggle", {
     end
 })
 
-local UpgradesSection = Tabs.Upgrades:AddSection("Stats")
+-- === UPGRADES SECTION ===
+UpgradesSection = Tabs.Upgrades:AddSection("Stats")
 
-local statsInfo = UpgradesSection:AddParagraph("UpgradeStats", {
+statsInfo = UpgradesSection:AddParagraph("UpgradeStats", {
     Title = "Upgrade Statistics",
     Content = "Loading...",
     TitleAlignment = "Middle",
@@ -869,15 +1207,11 @@ local statsInfo = UpgradesSection:AddParagraph("UpgradeStats", {
 
 -- Function to update stats
 local function updateStats()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Knit = require(game:GetService("ReplicatedStorage").Shared.Packages.Knit)
-
-    local DataController = Knit.GetController("DataController")
     local ownedUpgrades = DataController:GetValue({"UpgradeTree"})
     local currentPoints = DataController:GetValue({"UpgradePoints"}) or 0
     
     -- Get the upgrade tree data
-    local UpgradeTree = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.UpgradeTree)
+    local UpgradeTree = require(ReplicatedStorage.Shared.Balancing.Shared.UpgradeTree)
     
     -- Count total upgrades and calculate total cost
     local totalUpgrades = 0
@@ -892,10 +1226,10 @@ local function updateStats()
     -- Count total upgrades and calculate cost of missing ones
     for _, upgrade in pairs(UpgradeTree) do
         if type(upgrade) == "table" and not upgrade.Back then
-            totalUpgrades += 1
+            totalUpgrades = totalUpgrades + 1
             if not ownedLookup[upgrade.ID] then
                 local cost = (type(upgrade.Cost) == "table" and upgrade.Cost.Amount) or 0
-                totalCost += cost
+                totalCost = totalCost + cost
             end
         end
     end
@@ -925,8 +1259,6 @@ task.spawn(function()
     end
 end)
 
-local UpgradeTreeService = game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.UpgradeTreeService
-
 local autoBuyUpgradesEnabled = false
 local autoBuyUpgradesCoroutine = nil
 
@@ -940,12 +1272,9 @@ UpgradesSection:AddToggle("AutoBuyUpgrades", {
         if enabled then
             autoBuyUpgradesCoroutine = task.spawn(function()
                 while autoBuyUpgradesEnabled do
-                    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-                    local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-                    local DataController = Knit.GetController("DataController")
                     local ownedUpgrades = DataController:GetValue({"UpgradeTree"})
                     local currentPoints = DataController:GetValue({"UpgradePoints"}) or 0
-                    local UpgradeTree = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.UpgradeTree)
+                    local UpgradeTree = require(ReplicatedStorage.Shared.Balancing.Shared.UpgradeTree)
 
                     -- Build lookup for owned upgrades
                     local ownedLookup = {}
@@ -983,9 +1312,22 @@ UpgradesSection:AddToggle("AutoBuyUpgrades", {
         end
     end
 })
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local QuestsFolder = game:GetService("ReplicatedStorage").Shared.Data.Core.Quests
-local QuestController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Shared.Core.QuestController)
+
+-- Quest handling
+QuestsFolder = ReplicatedStorage.Shared.Data.Core.Quests
+local QuestController = require(LocalPlayer.PlayerScripts.Client.Controllers.Shared.Core.QuestController)
+
+-- Quests to exclude
+local excludedQuests = {
+    ["Craft Enchants"] = true,
+    ["Craft Potions"] = true,
+    ["Buy an upgrade!"] = true,
+    ["Earn XP"] = true,
+    ["Playtime"] = true,
+    ["Purchase the next area!"] = true,
+    ["Use Plantables"] = true,
+    ["Mine Blocks"] = true
+}
 
 -- Get all quest titles and IDs and sort them alphabetically
 local questTitles = {}
@@ -996,7 +1338,7 @@ local moduleInfo = {}
 for _, questModule in pairs(QuestsFolder:GetChildren()) do
     local quest = require(questModule)
     local success, title = pcall(function() return quest:GetTitle() end)
-    if success and title then
+    if success and title and not excludedQuests[title] then
         moduleInfo[quest.ID] = {
             title = title,
             module = questModule.Name,
@@ -1019,12 +1361,13 @@ local function getQuestData(questId)
     return nil
 end
 
--- Add the section to Upgrades tab
-local QuestSection = Tabs.Upgrades:AddSection("Auto Quest")
 
-local QuestNote = QuestSection:AddParagraph("QuestNote", {
+-- Add the section to Upgrades tab
+QuestSection = Tabs.Upgrades:AddSection("Auto Quest")
+
+QuestNote = QuestSection:AddParagraph("QuestNote", {
     Title = "Note",
-    Content = "Quests that involve hatching, breaking, bosses, etc, will use your selected values from other dropdowns. If the quest requires you to gold pets, this will hatch the selected egg and gold the EASY pets from it.",
+    Content = "Quests that involve hatching, breaking, bosses, etc, will use your selected values from other dropdowns. If the quest requires you to gold pets, this will hatch the selected egg and gold the EASY pets from it. Some quest names are different to what you will see, but will still be auto completed.",
     TitleAlignment = "Middle",
     ContentAlignment = Enum.TextXAlignment.Left
 })
@@ -1033,7 +1376,7 @@ local QuestNote = QuestSection:AddParagraph("QuestNote", {
 local selectedQuests = {}
 
 -- Create dropdown for quest selection
-local QuestDropdown = QuestSection:AddDropdown("QuestSelect", {
+QuestDropdown = QuestSection:AddDropdown("QuestSelect", {
     Title = "Select Quest",
     Description = "Choose which quest to auto-complete",
     Values = questTitles,
@@ -1058,22 +1401,12 @@ QuestSection:AddButton({
     end
 })
 
-
-local EggsModule = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.Eggs)
-local PetsEnum = require(game:GetService("ReplicatedStorage").Shared.Enums.Pets)
+local EggsModule = require(ReplicatedStorage.Shared.Balancing.Shared.Eggs)
+local PetsEnum = require(ReplicatedStorage.Shared.Enums.Pets)
 
 local function completeQuest(questName, questData)
     if not questData or questData.Completed then return end
 
-    -- For Swing Sword quest
-    if questName == "Swing Sword" then
-        task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.SwordAttackService.RF.swing:InvokeServer()
-                task.wait(0.25)
-            end
-        end)
-    end
 
     if questName == "Upgrade Pets" then
         task.spawn(function()
@@ -1106,7 +1439,7 @@ local function completeQuest(questName, questData)
                         [2] = hatchAmount,
                         [3] = false
                     }
-                    game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.EggService.RF.purchaseEgg:InvokeServer(unpack(args))
+                    EggService.RF.purchaseEgg:InvokeServer(unpack(args))
     
                     -- If we found any common pets, try to gold a random one
                     if #commonPets > 0 then
@@ -1118,7 +1451,7 @@ local function completeQuest(questName, questData)
                             [1] = randomPet.id,  -- Use the ID-1 format directly
                             [2] = 5
                         }
-                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.GoldMachineService.RF.craft:InvokeServer(unpack(args))
+                        GoldMachineService.RF.craft:InvokeServer(unpack(args))
                     end
                 end
                 task.wait(1)
@@ -1126,31 +1459,54 @@ local function completeQuest(questName, questData)
         end)
     end
 
-    if questName == "Kill Bosses" or questName == "Win Battles" then
-        task.spawn(function()
-            -- Remember if AutoFight was already on before quest automation
-            local wasOn = AutoFightToggle.Value
+    -- Store original AutoFight state before running any quest logic
+    local originalAutoFightState = AutoFightToggle.Value
 
+    if questName == "Kill Bosses" then
+        task.spawn(function()
             while autoCompleteEnabled and not questData.Completed do
-                -- Enable auto fight if it's not already on
                 if not AutoFightToggle.Value then
                     AutoFightToggle:SetValue(true)
                 end
-
-                -- Stop when quest is complete
+                
                 if questData.Progress >= questData.Goal then
-                    -- Only turn it off if we turned it on
-                    if not wasOn then
-                        AutoFightToggle:SetValue(false)
-                    end
+                    break -- exit loop
+                end
+
+                task.wait(1)
+            end
+
+            -- After loop ends, handle completion
+            if questData.Progress >= questData.Goal or questData.Completed then
+                if not originalAutoFightState then
+                    AutoFightToggle:SetValue(false)
+                end
+            end
+        end)
+    end
+
+    if questName == "Win Battles" then
+        task.spawn(function()
+            while autoCompleteEnabled and not questData.Completed do
+                if not AutoFightToggle.Value then
+                    AutoFightToggle:SetValue(true)
+                end
+                
+                if questData.Progress >= questData.Goal then
                     break
                 end
 
                 task.wait(1)
             end
+
+            -- After loop ends, handle completion
+            if questData.Progress >= questData.Goal or questData.Completed then
+                if not originalAutoFightState then
+                    AutoFightToggle:SetValue(false)
+                end
+            end
         end)
     end
-
 
     -- For Open Sword Chest quest
     if questName == "Open Sword Chests" then
@@ -1159,7 +1515,7 @@ local function completeQuest(questName, questData)
                 local args = {
                     [1] = ChestDropdown.Value or "W1Z1"
                 }
-                game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.SwordCrateService.RF.open:InvokeServer(unpack(args))
+                SwordCrateService.RF.open:InvokeServer(unpack(args))
                 task.wait(1)
             end
         end)
@@ -1176,11 +1532,111 @@ local function completeQuest(questName, questData)
                     [3] = false
                 }
                 
-                game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.EggService.RF.purchaseEgg:InvokeServer(unpack(args))
+                EggService.RF.purchaseEgg:InvokeServer(unpack(args))
                 task.wait(1)
             end
         end)
     end
+
+    if questName == "Break Breakables" then
+        task.spawn(function()
+            -- Save original AutoTrain state
+            local originalAutoTrainState = autoTrainEnabled
+
+            -- Turn on AutoTrain if not already on
+            if not autoTrainEnabled then
+                AutoTrain:SetValue(true)
+            end
+
+            -- Wait for quest completion
+            while autoCompleteEnabled and not questData.Completed do
+                if questData.Progress >= questData.Goal then break end
+                task.wait(1)
+            end
+
+            -- Restore original AutoTrain state
+            if not originalAutoTrainState then
+                AutoTrain:SetValue(false)
+            end
+        end)
+    end
+
+    if questName == "Use Potions" then
+        task.spawn(function()
+            while autoCompleteEnabled and not questData.Completed do
+                -- Find potion with highest count
+                local potionController = Knit.GetController("PotionController")
+                local PotionTypes = require(ReplicatedStorage.Shared.Enums.PotionTypes)
+                local storage = potionController.Storage or {}
+                
+                local mostPotion = {
+                    id = nil,
+                    tier = nil,
+                    count = 0
+                }
+                
+                -- Check storage for potions (only tiers 1-3)
+                for potionId, tiers in pairs(storage) do
+                    for tier, amount in pairs(tiers) do
+                        -- Convert to numbers to avoid type comparison issues
+                        amount = tonumber(amount) or 0
+                        tier = tonumber(tier) or 1
+                        
+                        -- Only consider tiers 1-3 as those are the most common
+                        if tier <= 3 and amount > mostPotion.count then
+                            mostPotion.id = potionId
+                            mostPotion.tier = tier
+                            mostPotion.count = amount
+                        end
+                    end
+                end
+                
+                -- If we found a potion, use it
+                if mostPotion.id and mostPotion.count > 0 then
+                    -- Convert potion ID to enum name
+                    local potionName = "Wins" -- Default fallback
+                    for enumName, id in pairs(PotionTypes) do
+                        if id == mostPotion.id then
+                            potionName = enumName
+                            break
+                        end
+                    end
+                    
+                    -- Check if quest still exists and isn't completed
+                    local questStillActive = false
+                    for activeId, activeQuest in pairs(QuestController.Current) do
+                        if activeQuest.Name and activeQuest.Type == questMap[questName] then
+                            if not activeQuest.Completed then
+                                questStillActive = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if not questStillActive then
+                        break -- Exit if quest is no longer active
+                    end
+                    
+                    -- Use exactly ONE potion at a time
+                    local args = {
+                        [1] = potionName,
+                        [2] = mostPotion.tier,
+                        [3] = 1  -- Always use just 1 potion at a time
+                    }
+                    
+                    local success, result = pcall(function()
+                        return game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PotionUseService.RF.use:InvokeServer(unpack(args))
+                    end)
+                    
+                    -- Wait before using the next potion (1 second)
+                    task.wait(1)
+                else
+                    task.wait(5)
+                end
+            end
+        end)
+    end
+
 
     -- For Open Gifts quest
     if questName == "Open Gifts" then
@@ -1188,7 +1644,6 @@ local function completeQuest(questName, questData)
             while autoCompleteEnabled and not questData.Completed do
                 -- Load BackpackInventoryController
                 local BackpackInventoryController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Shared.Utility.Backpack.BackpackInventoryController)
-
 
                 -- Access the GiftConsumables category (corrected from 'Gift' to 'GiftConsumables')
                 local giftCategory = BackpackInventoryController.Amounts.GiftConsumables or {}
@@ -1219,8 +1674,7 @@ local function completeQuest(questName, questData)
 
                     if giftsToOpen > 0 and maxAmount > 0 then
                         local args = {bestGiftBag, giftsToOpen}
-                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.GiftBagService.RF.openGift:InvokeServer(unpack(args))
-                    else
+                        ReplicatedStorage.Shared.Packages.Knit.Services.GiftBagService.RF.openGift:InvokeServer(unpack(args))
                     end
                 end
 
@@ -1231,8 +1685,6 @@ local function completeQuest(questName, questData)
 end
 
 
-
-
 -- Update the auto-complete toggle callback
 QuestSection:AddToggle("AutoCompleteQuest", {
     Title = "Auto Complete Quest",
@@ -1240,8 +1692,9 @@ QuestSection:AddToggle("AutoCompleteQuest", {
     Default = false,
     Callback = function(enabled)
         autoCompleteEnabled = enabled
-        
+
         if enabled then
+            -- Auto complete selected quests
             task.spawn(function()
                 while autoCompleteEnabled do
                     for title, isSelected in pairs(selectedQuests) do
@@ -1256,11 +1709,21 @@ QuestSection:AddToggle("AutoCompleteQuest", {
                     task.wait(1)
                 end
             end)
+
+            -- Always swing sword while toggle is on
+            task.spawn(function()
+                while autoCompleteEnabled do
+                    ReplicatedStorage.Shared.Packages.Knit.Services.SwordAttackService.RF.swing:InvokeServer()
+                    task.wait(0.25) -- adjust swing speed here
+                end
+            end)
         end
     end
 })
+
+
 -- Add a paragraph to show current quest progress
-local questInfoParagraph = QuestSection:AddParagraph("QuestInfo", {
+questInfoParagraph = QuestSection:AddParagraph("QuestInfo", {
     Title = "Selected Quests Progress",
     Content = "Select quests to see progress",
 })
@@ -1307,13 +1770,11 @@ task.spawn(function()
     end
 end)
 
-local TeleportSection = Tabs.Teleport:AddSection("Breakable Spawns")
+-- === TELEPORT SECTION ===
+TeleportSection = Tabs.Teleport:AddSection("Breakable Spawns")
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local breakables = workspace:WaitForChild("Core_Game"):WaitForChild("Breakables")
 
--- ...existing code...
 local function addSpawnButtons(parent, prefix)
     prefix = prefix or ""
     for _, child in pairs(parent:GetChildren()) do
@@ -1345,13 +1806,9 @@ end
 
 addSpawnButtons(breakables)
 
-local MachinesSection = Tabs.Machines:AddSection("Gold Machine")
+-- === MACHINES SECTION ===
+MachinesSection = Tabs.Machines:AddSection("Gold Machine")
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-
-local ItemTiersEnum = require(game:GetService("ReplicatedStorage").Shared.Enums.ItemTiers)
 local TierNames = {}
 for name, number in pairs(ItemTiersEnum) do
     TierNames[number] = name
@@ -1360,9 +1817,9 @@ end
 local function collectUnlockedTier1PetsFromGui()
     local petController = Knit.GetController("PetController")
     local petDataStore = petController.Pets
-    local playerGui = Players.LocalPlayer.PlayerGui
-    local inventory = game:GetService("Players").LocalPlayer.PlayerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Inventory
-    local equippedInventory = game:GetService("Players").LocalPlayer.PlayerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Equipped_Inventory
+    local playerGui = LocalPlayer.PlayerGui
+    local inventory = playerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Inventory
+    local equippedInventory = playerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Equipped_Inventory
 
     local pets = {}
     local seenNames = {}
@@ -1414,7 +1871,7 @@ local function getPetNames()
     return petNames
 end
 
-local petInfoParagraph = MachinesSection:AddParagraph("PetInfo", {
+petInfoParagraph = MachinesSection:AddParagraph("PetInfo", {
     Title = "Pet Info",
     Content = "Selected Pets",
     TitleAlignment = "Middle",
@@ -1434,7 +1891,6 @@ local function updatePetInfoDisplay(selectedNamesDict, previousSelection)
             for _, pet in ipairs(unlockedTier1Pets) do
                 if pet.Name == selectedName then
                     table.insert(lines, string.format("%s - %dx", pet.Name, pet.Quantity))
-                    
 
                     if not previousSelection or not previousSelection[selectedName] then
                     end
@@ -1451,12 +1907,13 @@ end
 -- Store previous selection to track changes
 local previousSelection = {}
 
-local petDropdown = MachinesSection:AddDropdown("UnlockedTier1PetsDropdown", {
+petDropdown = MachinesSection:AddDropdown("UnlockedTier1PetsDropdown", {
     Title = "Select Pets to turn Golden",
     Description = "Select unlocked pets.",
     Values = getPetNames(),
     Multi = true,
     Default = {},
+    Searchable = true,
     Callback = function(selectedNamesDict)
         updatePetInfoDisplay(selectedNamesDict, previousSelection)
         -- Update previous selection for next comparison
@@ -1497,7 +1954,7 @@ MachinesSection:AddButton({
 local autoGoldEnabled = false
 local autoGoldConnection = nil
 
-local autoGoldToggle = MachinesSection:AddToggle("AutoGoldPets", {
+autoGoldToggle = MachinesSection:AddToggle("AutoGoldPets", {
     Title = "Auto Gold Pets",
     Description = "Automatically gold selected pets (if enough pets are owned).",
     Default = false,
@@ -1524,9 +1981,9 @@ local autoGoldToggle = MachinesSection:AddToggle("AutoGoldPets", {
                                 }
                                 
                                 local success, result = pcall(function()
-                                    return game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.GoldMachineService.RF.craft:InvokeServer(unpack(args))
+                                    return GoldMachineService.RF.craft:InvokeServer(unpack(args))
                                 end)
-                                
+                                wait(1)
                                 break
                             end
                         end
@@ -1557,11 +2014,197 @@ spawn(function()
 end)
 
 
-local Plots = Tabs.Plant:AddSection("Garden Plots")
+
+-- === RAINBOW SECTION ===
+RainbowSection = Tabs.Machines:AddSection("Rainbow Machine")
+
+local function collectUnlockedTier2PetsFromGui()
+    local petController = Knit.GetController("PetController")
+    local petDataStore = petController.Pets
+    local playerGui = LocalPlayer.PlayerGui
+    local inventory = playerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Inventory
+    local equippedInventory = playerGui.GameUI.MainFrames.Inventory.Inner.Holder.Inner.Pages.Pets.Contents.Contents.Equipped_Inventory
+
+    local pets = {}
+    local seenNames = {}
+
+    local function collect(folder)
+        for _, child in pairs(folder:GetChildren()) do
+            if child:IsA("ImageButton") then
+                local id = child:GetAttribute("ID")
+                local tier = child:GetAttribute("Tier")
+                if id and tier and tonumber(tier) == 2 then -- Only tier 2 (Golden)
+                    local tierName = TierNames[tier] or "Unknown"
+                    local fullKey = id .. "-" .. tier
+                    local petData = petDataStore[fullKey]
+                    if petData and petData.L == false then -- unlocked only
+                        local guiName = string.match(child.Name, "^nil%-(.-)%-.+%-.+") or "Unknown"
+                        local fullName = (tierName ~= "Normal" and tierName .. " " or "") .. guiName
+                        if not seenNames[fullName] then
+                            seenNames[fullName] = true
+                            table.insert(pets, {
+                                Name = fullName,
+                                Quantity = petData.Q or 0,
+                                ID = id,
+                                Tier = tonumber(tier),
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    collect(inventory)
+    collect(equippedInventory)
+    return pets
+end
+
+-- Store reference to current pets data
+local unlockedTier2Pets = collectUnlockedTier2PetsFromGui()
+
+local function getRainbowPetNames()
+    local petNames = {}
+    local nameSet = {}
+    for _, pet in ipairs(unlockedTier2Pets) do
+        if not nameSet[pet.Name] then
+            table.insert(petNames, pet.Name)
+            nameSet[pet.Name] = true
+        end
+    end
+    return petNames
+end
+
+rainbowPetInfoParagraph = RainbowSection:AddParagraph("RainbowPetInfo", {
+    Title = "Rainbow Pet Info",
+    Content = "Selected Pets",
+    TitleAlignment = "Middle",
+    ContentAlignment = Enum.TextXAlignment.Left
+})
+
+-- Function to update rainbow pet info display
+local function updateRainbowPetInfoDisplay(selectedNamesDict, previousSelection)
+    unlockedTier2Pets = collectUnlockedTier2PetsFromGui()
+    
+    local lines = {}
+    local nameSet = {}
+    
+    for selectedName, isSelected in pairs(selectedNamesDict) do
+        if isSelected and not nameSet[selectedName] then
+            for _, pet in ipairs(unlockedTier2Pets) do
+                if pet.Name == selectedName then
+                    table.insert(lines, string.format("%s - %dx", pet.Name, pet.Quantity))
+                    nameSet[selectedName] = true
+                    break
+                end
+            end
+        end
+    end
+    rainbowPetInfoParagraph:SetValue(#lines > 0 and table.concat(lines, "\n") or "Select pets to see their name and quantity.")
+end
+
+-- Store previous rainbow selection
+local rainbowPreviousSelection = {}
+
+rainbowDropdown = RainbowSection:AddDropdown("UnlockedTier2PetsDropdown", {
+    Title = "Select Pets to turn Rainbow",
+    Description = "Select unlocked golden pets.",
+    Values = getRainbowPetNames(),
+    Multi = true,
+    Default = {},
+    Searchable = true,
+    Callback = function(selectedNamesDict)
+        updateRainbowPetInfoDisplay(selectedNamesDict, rainbowPreviousSelection)
+        rainbowPreviousSelection = {}
+        for name, isSelected in pairs(selectedNamesDict) do
+            rainbowPreviousSelection[name] = isSelected
+        end
+    end
+})
+
+-- Button to refresh rainbow pet list
+RainbowSection:AddButton({
+    Title = "Refresh Rainbow Pet List",
+    Description = "Update the list of available golden pets",
+    Callback = function()
+        unlockedTier2Pets = collectUnlockedTier2PetsFromGui()
+        local updatedPetNames = getRainbowPetNames()
+        rainbowDropdown:SetValues(updatedPetNames)
+        
+        local currentSelection = rainbowDropdown.Value or {}
+        updateRainbowPetInfoDisplay(currentSelection, rainbowPreviousSelection)
+        
+        rainbowPreviousSelection = {}
+        for name, isSelected in pairs(currentSelection) do
+            rainbowPreviousSelection[name] = isSelected
+        end
+    end
+})
+
+-- Auto Rainbow Pets functionality
+local autoRainbowEnabled = false
+local autoRainbowConnection = nil
+local RainbowMachineService = Knit.GetService("RainbowMachineService")
+
+RainbowSection:AddToggle("AutoRainbowPets", {
+    Title = "Auto Rainbow Pets",
+    Description = "Automatically rainbow selected pets (if enough golden pets are owned).",
+    Default = false,
+    Callback = function(enabled)
+        autoRainbowEnabled = enabled
+        
+        if enabled then           
+            autoRainbowConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not autoRainbowEnabled then return end
+                
+                local selectedPets = rainbowDropdown.Value or {}
+                
+                for petName, isSelected in pairs(selectedPets) do
+                    if isSelected then
+                        for _, pet in ipairs(unlockedTier2Pets) do
+                            if pet.Name == petName and pet.Quantity >= 5 then
+                                local petId = pet.ID .. "-" .. pet.Tier
+                                local args = {
+                                    [1] = petId,
+                                    [2] = 5
+                                }
+                                local success, result = pcall(function()
+                                    return game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.RainbowMachineService.RF.craft:InvokeServer(unpack(args))
+                                end)
+                                wait(1)
+                                break
+                            end
+                        end
+                    end
+                end
+                task.wait(1) -- Rainbow pets every second
+            end)
+        else
+            if autoRainbowConnection then
+                autoRainbowConnection:Disconnect()
+                autoRainbowConnection = nil
+            end
+        end
+    end
+})
+
+-- Update rainbow pet quantities every 3 seconds
+spawn(function()
+    while true do
+        local currentSelection = rainbowDropdown.Value or {}
+        if currentSelection and next(currentSelection) then
+            updateRainbowPetInfoDisplay(currentSelection, rainbowPreviousSelection)
+        end
+        task.wait(3)
+    end
+end)
+
+-- === PLANT SECTION ===
+Plots = Tabs.Plant:AddSection("Garden Plots")
 
 local isBuying = false
 
-local buyplottoggle = Plots:AddToggle("AutoBuyPlot", {
+buyplottoggle = Plots:AddToggle("AutoBuyPlot", {
     Title = "Auto Buy Plot(s)",
     Description = "Automatically buy affordable plots.",
     Default = false,
@@ -1569,18 +2212,12 @@ local buyplottoggle = Plots:AddToggle("AutoBuyPlot", {
         isBuying = enabled
         if enabled then
             task.spawn(function()
-                local ReplicatedStorage = game:GetService("ReplicatedStorage")
-                local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-                local PlotData = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.Crafting.PlotData)
-                local DataController = Knit.GetController("DataController")
-                local PlotService = game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PlotService
-                local Players = game:GetService("Players")
-                local player = Players.LocalPlayer
+                local PlotData = require(ReplicatedStorage.Shared.Balancing.Shared.Crafting.PlotData)
 
                 while isBuying do
                     -- Get current gems from GUI
                     local success, gems = pcall(function()
-                        local textLabel = player.PlayerGui.GameUI.HUDS.Top_Middle.Inner.Currency:GetChildren()[14].TextLabel
+                        local textLabel = LocalPlayer.PlayerGui.GameUI.HUDS.Top_Middle.Inner.Currency:GetChildren()[14].TextLabel
                         local text = textLabel.Text
                         return tonumber(text:gsub(",", ""))
                     end)
@@ -1616,9 +2253,11 @@ local buyplottoggle = Plots:AddToggle("AutoBuyPlot", {
     end
 })
 
-local AutoPlant = Tabs.Plant:AddSection("Auto Plant")
 
-local SeedData = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.Crafting.SeedData)
+
+AutoPlant = Tabs.Plant:AddSection("Auto Plant")
+
+local SeedData = require(ReplicatedStorage.Shared.Balancing.Shared.Crafting.SeedData)
 
 -- Get all seed names from SeedData
 local allSeedNames = {}
@@ -1629,7 +2268,7 @@ table.sort(allSeedNames)
 
 local selectedSeedsToPlant = {}
 
-local autoSeedDropdown = AutoPlant:AddDropdown("SelectSeedsToPlant", {
+autoSeedDropdown = AutoPlant:AddDropdown("SelectSeedsToPlant", {
     Title = "Select Seeds to Plant",
     Description = "These will be planted in available plots.",
     Values = allSeedNames,
@@ -1658,16 +2297,9 @@ AutoPlant:AddToggle("AutoPlant", {
 
         if enabled then
             autoPlantCoroutine = task.spawn(function()
-                local ReplicatedStorage = game:GetService("ReplicatedStorage")
-                local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-                
                 while autoPlantEnabled do
-                    local DataController = Knit.GetController("DataController")
-                    local BackpackCategory = require(game:GetService("ReplicatedStorage").Shared.Enums.BackpackCategory)
-                    local backpackController = Knit.GetController("BackpackController")
-                    
                     -- Get available seeds
-                    local seeds = backpackController:get(BackpackCategory.Seeds)
+                    local seeds = BackpackController:get(BackpackCategory.Seeds)
                     
                     -- Get plant data for all plots
                     local plantsData = DataController:GetValue({ "GardenPlots", "Plants" }) or {}
@@ -1680,7 +2312,7 @@ AutoPlant:AddToggle("AutoPlant", {
                         local count = 0
                         if type(plotPlants) == "table" then
                             for _, _ in pairs(plotPlants) do
-                                count += 1
+                                count = count + 1
                             end
                         end
                         if count < 10 then
@@ -1711,7 +2343,7 @@ AutoPlant:AddToggle("AutoPlant", {
                                     }
                                     
                                     pcall(function()
-                                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PlantService.RF.plant:InvokeServer(unpack(args))
+                                        PlantService.RF.plant:InvokeServer(unpack(args))
                                     end)
                                     
                                     planted = true
@@ -1738,10 +2370,9 @@ AutoPlant:AddToggle("AutoPlant", {
     end
 })
 
+AutoHarvest = Tabs.Plant:AddSection("Auto Harvest")
 
-local AutoHarvest = Tabs.Plant:AddSection("Auto Harvest")
-
-local PlotData = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.Crafting.PlotData)
+local PlotData = require(ReplicatedStorage.Shared.Balancing.Shared.Crafting.PlotData)
 
 -- Build dropdown values from all plot names
 local allPlotNames = {}
@@ -1752,13 +2383,14 @@ table.sort(allPlotNames)
 
 local selectedPlotsToHarvest = {}
 
-local noteplot = AutoHarvest:AddParagraph("Note", {
+noteplot = AutoHarvest:AddParagraph("Note", {
     Title = "Note",
     Content = "The plots won't visually show as harvested until you rejoin, but you will still gain the items and continue to be able to plant.",
     TitleAlignment = "Middle",
     ContentAlignment = Enum.TextXAlignment.Left
 })
-local plotDropdown = AutoHarvest:AddDropdown("SelectPlotsToHarvest", {
+
+plotDropdown = AutoHarvest:AddDropdown("SelectPlotsToHarvest", {
     Title = "Select Plots to Auto Harvest",
     Description = "Choose plots to auto harvest (multi-select).",
     Values = allPlotNames,
@@ -1786,7 +2418,7 @@ AutoHarvest:AddToggle("AutoHarvest", {
                         if isSelected then
                             local args = { [1] = plotName }
                             pcall(function()
-                                game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PlotService.RF.harvest:InvokeServer(unpack(args))
+                                PlotService.RF.harvest:InvokeServer(unpack(args))
                             end)
                             task.wait(0.5)
                         end
@@ -1796,7 +2428,7 @@ AutoHarvest:AddToggle("AutoHarvest", {
             end)
         else
             if autoHarvestCoroutine then
-                task.cancel(autoHarvestCoroutine)
+                                task.cancel(autoHarvestCoroutine)
                 autoHarvestCoroutine = nil
             end
         end
@@ -1804,7 +2436,7 @@ AutoHarvest:AddToggle("AutoHarvest", {
 })
 
 -- Auto Buy Seeds Section
-local AutoBuySeeds = Tabs.Plant:AddSection("Auto Buy Seeds")
+AutoBuySeeds = Tabs.Plant:AddSection("Auto Buy Seeds")
 
 local seedDropdownValues = {}
 for seedName, _ in pairs(SeedData) do
@@ -1852,7 +2484,7 @@ AutoBuySeeds:AddButton({
             return
         end
 
-        autoBuySeedsEnabled = true -- mark as active
+        autoBuySeedsEnabled = true
 
         autoBuySeedsCoroutine = task.spawn(function()
             for i = 1, seedPurchaseAmount do
@@ -1861,9 +2493,9 @@ AutoBuySeeds:AddButton({
                 end
 
                 pcall(function()
-                    game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.SeedStoreService.RF.purchase:InvokeServer(selectedSeedToBuy)
+                    ReplicatedStorage.Shared.Packages.Knit.Services.SeedStoreService.RF.purchase:InvokeServer(selectedSeedToBuy)
                 end)
-                task.wait(0.5) -- small delay between purchases
+                task.wait(0.5)
             end
 
             autoBuySeedsEnabled = false
@@ -1885,24 +2517,14 @@ AutoBuySeeds:AddButton({
     end
 })
 
--- Potion Crafting Section
-local AutoPotionSection = Tabs.Potion:AddSection("Potion Crafting")
-
--- Get potion data from game
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-
--- Wait for Knit to initialize if needed
-if not Knit.Started then
-    Knit.OnStart():await()
-end
+-- === POTION SECTION ===
+AutoPotionSection = Tabs.Potion:AddSection("Potion Crafting")
 
 local PotionController = Knit.GetController("PotionController")
-local UpgradeTreeController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Shared.Core.UpgradeTree.UpgradeTreeController)
+local UpgradeTreeController = require(LocalPlayer.PlayerScripts.Client.Controllers.Shared.Core.UpgradeTree.UpgradeTreeController)
 local RomanModule = require(ReplicatedStorage.Shared.Vendor.RomanModule)
 local Potions = require(ReplicatedStorage.Shared.Balancing.Shared.Items.Potions)
 local PotionTypes = require(ReplicatedStorage.Shared.Enums.PotionTypes)
-local PotionUpgradeMachine = require(ReplicatedStorage.Shared.Balancing.Shared.Machines.PotionUpgradeMachine)
 local UpgradeTreeTypes = require(ReplicatedStorage.Shared.Enums.UpgradeTreeTypes)
 
 -- Check for tier unlocks
@@ -1947,19 +2569,14 @@ local function romanToNumber(roman)
     if roman == "III" then return 3 end
     if roman == "IV" then return 4 end
     if roman == "V" then return 5 end
-    if roman == "VI" then return 6 end
-    if roman == "VII" then return 7 end
-    if roman == "VIII" then return 8 end
-    return 1 -- Default fallback
+    return 1
 end
 
 -- Get potion ID and tier from dropdown name string
 local function getPotionIdFromName(fullName)
-    -- Try format: "EnumKey (DisplayName) RomanTier"
     local enumKey, displayName, roman = fullName:match("^([%w_]+)%s+%((.+)%)%s+([IVX]+)$")
     
     if not enumKey then
-        -- Try format: "DisplayName RomanTier"
         displayName, roman = fullName:match("(.+) ([IVX]+)$")
         if displayName then
             enumKey = displayNameToEnumKey[displayName]
@@ -1983,7 +2600,6 @@ local function getPotionIdFromName(fullName)
         end
     end
     
-    -- Last resort: search by displayName in Potions
     if displayName then
         for potionId, potionData in pairs(Potions) do
             if potionData.Name == displayName then
@@ -2053,29 +2669,12 @@ local function getPotionNames()
     return names
 end
 
-local function getMaxCraftable(potionId, tier)
-    local storage = PotionController.Storage or {}
-
-    if typeof(tier) == "string" then
-        tier = tonumber(tier) or tier
-    end
-
-    if not storage[potionId] or not storage[potionId][tier] then
-        return 0
-    end
-
-    local amount = storage[potionId][tier]
-
-    -- Divide by 4 and round down
-    return math.floor(amount / 4)
-end
-
 -- Selected potions and craft amount vars
 local selectedPotions = {}
 local craftAmount = 1
 
 -- Add potion info paragraph
-local potionInfoParagraph = AutoPotionSection:AddParagraph("PotionInfo", {
+potionInfoParagraph = AutoPotionSection:AddParagraph("PotionInfo", {
     Title = "Potion Crafting Info",
     Content = "Select potions to see crafting information",
     TitleAlignment = "Middle",
@@ -2098,32 +2697,26 @@ local function updatePotionInfo(selectedPotions)
             else
                 local amount = 0
                 local storage = PotionController.Storage or {}
-                -- Get actual stored amount (check both numeric and string tier keys)
                 amount = storage[potionId] and (storage[potionId][tier] or storage[potionId][tostring(tier)]) or 0
 
-                -- Calculate how many potions can be crafted: amount divided by 4, rounded down
                 local maxCraftable = math.floor(amount / 4)
-
-                -- Determine if crafting is possible
                 local canCraft = maxCraftable >= 1
 
-                -- Check tier unlocks for next tier
                 local nextTier = tonumber(tier) and tier + 1 or 2
                 local tierUnlocked = true
-                if nextTier == 3 and not tier3Unlocked then
+                if nextTier == 4 and not tier3Unlocked then
                     tierUnlocked = false
-                elseif nextTier == 4 and not tier4Unlocked then
+                elseif nextTier == 5 and not tier4Unlocked then
                     tierUnlocked = false
-                elseif nextTier > 4 then
+                elseif nextTier > 5 then
                     tierUnlocked = false
                 end
 
-                -- Build info string
                 infoText = infoText .. potionName .. ":\n"
                 infoText = infoText .. "• Current amount: " .. amount .. "\n"
                 infoText = infoText .. "• Can craft: " .. (canCraft and "Yes" or "No") .. "\n"
                 infoText = infoText .. "• Max craftable: " .. maxCraftable .. "\n"
-                infoText = infoText .. "• Crafting Tier unlocked: " .. (tierUnlocked and "Yes" or "No (crafting won't work)") .. "\n\n"
+                infoText = infoText .. "• Crafting available: " .. (tierUnlocked and "Yes" or "No. You won't be able to craft this tier with your current upgrades.") .. "\n"
             end
         end
     end
@@ -2131,9 +2724,8 @@ local function updatePotionInfo(selectedPotions)
     potionInfoParagraph:SetValue(infoText ~= "" and infoText or "No valid potions selected")
 end
 
-
 -- Add potion dropdown (multi-select)
-local potionDropdown = AutoPotionSection:AddDropdown("PotionSelect", {
+potionDropdown = AutoPotionSection:AddDropdown("PotionSelect", {
     Title = "Select Potions",
     Description = "Choose which potions to craft (multi-select)",
     Values = getPotionNames(),
@@ -2146,7 +2738,7 @@ local potionDropdown = AutoPotionSection:AddDropdown("PotionSelect", {
 })
 
 -- Add craft amount input
-local craftAmountInput = AutoPotionSection:AddInput("CraftAmount", {
+craftAmountInput = AutoPotionSection:AddInput("CraftAmount", {
     Title = "Craft Amount",
     Description = "Number of potions to craft",
     Placeholder = "--",
@@ -2175,7 +2767,7 @@ AutoPotionSection:AddButton({
                 if potionId and tier then
                     local args = {potionId, tier, craftAmount}
                     pcall(function()
-                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PotionUpgradeService.RF.upgrade:InvokeServer(unpack(args))
+                        ReplicatedStorage.Shared.Packages.Knit.Services.PotionUpgradeService.RF.upgrade:InvokeServer(unpack(args))
                     end)
                     task.wait(0.2)
                 end
@@ -2194,7 +2786,6 @@ AutoPotionSection:AddButton{
         if not next(selectedPotions) then return end
 
         local storage = PotionController.Storage or {}
-        local totalCraft = 0
         local potionsToCraft = {}
 
         for potionName, isSelected in pairs(selectedPotions) do
@@ -2209,7 +2800,6 @@ AutoPotionSection:AddButton{
                             amount = amount,
                             name = potionName
                         })
-                        totalCraft += amount
                     end
                 end
             end
@@ -2217,10 +2807,9 @@ AutoPotionSection:AddButton{
 
         if #potionsToCraft == 0 then return end
 
-        -- Show confirmation dialog
         Window:Dialog{
             Title = "Confirm Crafting",
-            Content = ("Are you sure you want to craft all of your selected potions?"), 
+            Content = "Are you sure you want to craft all of your selected potions?", 
             Buttons = {
                 {
                     Title = "Confirm",
@@ -2228,8 +2817,7 @@ AutoPotionSection:AddButton{
                         for _, potion in ipairs(potionsToCraft) do
                             local args = {potion.id, potion.tier, potion.amount}
                             pcall(function()
-                                game:GetService("ReplicatedStorage")
-                                    .Shared.Packages.Knit.Services.PotionUpgradeService.RF.upgrade:InvokeServer(unpack(args))
+                                ReplicatedStorage.Shared.Packages.Knit.Services.PotionUpgradeService.RF.upgrade:InvokeServer(unpack(args))
                             end)
                             task.wait(0.2)
                         end
@@ -2247,19 +2835,16 @@ AutoPotionSection:AddButton{
     end
 }
 
-
 -- Active Potions Section
-local ActivePotionsSection = Tabs.Potion:AddSection("Active Potions")
+ActivePotionsSection = Tabs.Potion:AddSection("Active Potions")
 
--- Active potions paragraph
-local activePotionsParagraph = ActivePotionsSection:AddParagraph("ActivePotions", {
+activePotionsParagraph = ActivePotionsSection:AddParagraph("ActivePotions", {
     Title = "Current Active Potions",
     Content = "Loading...",
     TitleAlignment = "Middle",
     ContentAlignment = Enum.TextXAlignment.Left
 })
 
--- Update active potions display (skip if duration <= 0)
 local function updateActivePotions()
     local activeList = {}
 
@@ -2311,10 +2896,8 @@ local function updateActivePotions()
     activePotionsParagraph:SetValue(activeText)
 end
 
--- Initial update
 updateActivePotions()
 
--- Periodically update active potions every 15 seconds
 task.spawn(function()
     while true do
         task.wait(15)
@@ -2322,38 +2905,20 @@ task.spawn(function()
     end
 end)
 
-
--- Enchantment Crafting Section
-local AutoEnchantSection = Tabs.Enchant:AddSection("Enchantment Crafting")
-
--- Get enchantment data from game
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-
--- Wait for Knit to initialize if needed
-if not Knit.Started then
-    Knit.OnStart():await()
-end
+-- === ENCHANTMENT SECTION ===
+AutoEnchantSection = Tabs.Enchant:AddSection("Enchantment Crafting")
 
 local EnchantmentController = Knit.GetController("EnchantmentController")
-local UpgradeTreeController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Shared.Core.UpgradeTree.UpgradeTreeController)
-local RomanModule = require(ReplicatedStorage.Shared.Vendor.RomanModule)
 local Enchantments = require(ReplicatedStorage.Shared.Balancing.Shared.Items.Enchantments)
 local EnchantmentTypes = require(ReplicatedStorage.Shared.Enums.EnchantmentTypes)
-local UpgradeTreeTypes = require(ReplicatedStorage.Shared.Enums.UpgradeTreeTypes)
+local enchant4Unlocked = UpgradeTreeController:hasUnlocked(UpgradeTreeTypes.Node128)
+local enchant5Unlocked = UpgradeTreeController:hasUnlocked(UpgradeTreeTypes.Node129)
 
--- Check for tier unlocks (similar to potions)
-local tier3Unlocked = UpgradeTreeController:hasUnlocked(UpgradeTreeTypes.Node116) -- Adjust node IDs if needed
-local tier4Unlocked = UpgradeTreeController:hasUnlocked(UpgradeTreeTypes.Node117)
-
--- Create mappings between display names, IDs, and enum keys
+-- Create mappings (similar to potions)
 local displayNameToEnumKey = {}
 local enumKeyToDisplayName = {}
 local idToEnumKey = {}
 
--- Build the mapping tables
 for enumKey, enchantId in pairs(EnchantmentTypes) do
     local enchantData = Enchantments[enchantId]
     if enchantData and enchantData.Name then
@@ -2363,42 +2928,11 @@ for enumKey, enchantId in pairs(EnchantmentTypes) do
     end
 end
 
--- Format enchantment name with tier and enum key
-local function formatEnchantName(enchantId, tier, includeEnumKey)
-    local enchant = Enchantments[enchantId]
-    local name = enchant and enchant.Name or enchantId
-    local enumKey = idToEnumKey[enchantId] or "Unknown"
-    
-    local tierNum = tonumber(tier) or 1
-    local romanTier = RomanModule.NumberToRoman(tierNum)
-    
-    if includeEnumKey then
-        return string.format("%s (%s) %s", enumKey, name, romanTier)
-    else
-        return string.format("%s %s", name, romanTier)
-    end
-end
-
--- Convert Roman numeral to number
-local function romanToNumber(roman)
-    if roman == "I" then return 1 end
-    if roman == "II" then return 2 end
-    if roman == "III" then return 3 end
-    if roman == "IV" then return 4 end
-    if roman == "V" then return 5 end
-    if roman == "VI" then return 6 end
-    if roman == "VII" then return 7 end
-    if roman == "VIII" then return 8 end
-    return 1 -- Default fallback
-end
-
 -- Get enchantment ID and tier from dropdown name string
 local function getEnchantIdFromName(fullName)
-    -- Try format: "EnumKey (DisplayName) RomanTier"
     local enumKey, displayName, roman = fullName:match("^([%w_]+)%s+%((.+)%)%s+([IVX]+)$")
     
     if not enumKey then
-        -- Try format: "DisplayName RomanTier"
         displayName, roman = fullName:match("(.+) ([IVX]+)$")
         if displayName then
             enumKey = displayNameToEnumKey[displayName]
@@ -2422,7 +2956,6 @@ local function getEnchantIdFromName(fullName)
         end
     end
     
-    -- Last resort: search by displayName in Enchantments
     if displayName then
         for enchantId, enchantData in pairs(Enchantments) do
             if enchantData.Name == displayName then
@@ -2434,7 +2967,6 @@ local function getEnchantIdFromName(fullName)
     return nil, nil
 end
 
--- Create sorted list of enchantments with their data for dropdown
 local function getEnchantmentsList()
     local allEnchantments = {}
     local storage = EnchantmentController.Storage or {}
@@ -2492,29 +3024,10 @@ local function getEnchantmentNames()
     return names
 end
 
-local function getMaxCraftable(enchantId, tier)
-    local storage = EnchantmentController.Storage or {}
-
-    if typeof(tier) == "string" then
-        tier = tonumber(tier) or tier
-    end
-
-    if not storage[enchantId] or not storage[enchantId][tier] then
-        return 0
-    end
-
-    local amount = storage[enchantId][tier]
-
-    -- Divide by 5 and round down (assuming same crafting ratio as potions)
-    return math.floor(amount / 5)
-end
-
--- Selected enchantments and craft amount vars
 local selectedEnchantments = {}
-local craftAmount = 1
+craftAmount = 1
 
--- Add enchantment info paragraph
-local enchantInfoParagraph = AutoEnchantSection:AddParagraph("EnchantInfo", {
+enchantInfoParagraph = AutoEnchantSection:AddParagraph("EnchantInfo", {
     Title = "Enchantment Crafting Info",
     Content = "Select enchantments to see crafting information",
     TitleAlignment = "Middle",
@@ -2537,32 +3050,26 @@ local function updateEnchantInfo(selectedEnchantments)
             else
                 local amount = 0
                 local storage = EnchantmentController.Storage or {}
-                -- Get actual stored amount (check both numeric and string tier keys)
                 amount = storage[enchantId] and (storage[enchantId][tier] or storage[enchantId][tostring(tier)]) or 0
 
-                -- Calculate how many enchantments can be crafted: amount divided by 4, rounded down
                 local maxCraftable = math.floor(amount / 5)
-
-                -- Determine if crafting is possible
                 local canCraft = maxCraftable >= 1
 
-                -- Check tier unlocks for next tier
                 local nextTier = tonumber(tier) and tier + 1 or 2
                 local tierUnlocked = true
-                if nextTier == 3 and not tier3Unlocked then
+                if nextTier == 4 and not enchant4Unlocked then
                     tierUnlocked = false
-                elseif nextTier == 4 and not tier4Unlocked then
+                elseif nextTier == 5 and not enchant5Unlocked then
                     tierUnlocked = false
-                elseif nextTier > 4 then
+                elseif nextTier > 5 then
                     tierUnlocked = false
                 end
 
-                -- Build info string
                 infoText = infoText .. enchantName .. ":\n"
                 infoText = infoText .. "• Current amount: " .. amount .. "\n"
                 infoText = infoText .. "• Can craft: " .. (canCraft and "Yes" or "No") .. "\n"
                 infoText = infoText .. "• Max craftable: " .. maxCraftable .. "\n"
-                infoText = infoText .. "• Crafting Tier unlocked: " .. (tierUnlocked and "Yes" or "No (crafting won't work)") .. "\n\n"
+                infoText = infoText .. "• Crafting available: " .. (tierUnlocked and "Yes" or "No. You won't be able to craft this tier with your current upgrades.") .. "\n"
             end
         end
     end
@@ -2570,8 +3077,7 @@ local function updateEnchantInfo(selectedEnchantments)
     enchantInfoParagraph:SetValue(infoText ~= "" and infoText or "No valid enchantments selected")
 end
 
--- Add enchantment dropdown (multi-select)
-local enchantDropdown = AutoEnchantSection:AddDropdown("EnchantSelect", {
+enchantDropdown = AutoEnchantSection:AddDropdown("EnchantSelect", {
     Title = "Select Enchantments",
     Description = "Choose which enchantments to craft (multi-select)",
     Values = getEnchantmentNames(),
@@ -2583,8 +3089,7 @@ local enchantDropdown = AutoEnchantSection:AddDropdown("EnchantSelect", {
     end
 })
 
--- Add craft amount input
-local craftAmountInput = AutoEnchantSection:AddInput("EnchantCraftAmount", {
+craftAmountInput = AutoEnchantSection:AddInput("EnchantCraftAmount", {
     Title = "Craft Amount",
     Description = "Number of enchants to upgrade",
     Placeholder = "--",
@@ -2600,7 +3105,6 @@ local craftAmountInput = AutoEnchantSection:AddInput("EnchantCraftAmount", {
     end
 })
 
--- Craft selected enchantments button
 AutoEnchantSection:AddButton({
     Title = "Craft Selected Enchantments",
     Description = "Craft the selected amount of each selected enchantment",
@@ -2613,7 +3117,7 @@ AutoEnchantSection:AddButton({
                 if enchantId and tier then
                     local args = {enchantId, tier, craftAmount}
                     pcall(function()
-                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.EnchantmentUpgradeService.RF.upgrade:InvokeServer(unpack(args))
+                        ReplicatedStorage.Shared.Packages.Knit.Services.EnchantmentUpgradeService.RF.upgrade:InvokeServer(unpack(args))
                     end)
                     task.wait(0.2)
                 end
@@ -2625,7 +3129,6 @@ AutoEnchantSection:AddButton({
     end
 })
 
--- Craft All button (similar to potions)
 AutoEnchantSection:AddButton({
     Title = "Craft All",
     Description = "Craft all your selected enchantments.",
@@ -2633,7 +3136,6 @@ AutoEnchantSection:AddButton({
         if not next(selectedEnchantments) then return end
 
         local storage = EnchantmentController.Storage or {}
-        local totalCraft = 0
         local enchantsToCraft = {}
 
         for enchantName, isSelected in pairs(selectedEnchantments) do
@@ -2648,7 +3150,6 @@ AutoEnchantSection:AddButton({
                             amount = amount,
                             name = enchantName
                         })
-                        totalCraft += amount
                     end
                 end
             end
@@ -2656,10 +3157,9 @@ AutoEnchantSection:AddButton({
 
         if #enchantsToCraft == 0 then return end
 
-        -- Show confirmation dialog
         Window:Dialog({
             Title = "Confirm Crafting",
-            Content = ("Are you sure you want to craft all of your selected enchantments?"), 
+            Content = "Are you sure you want to craft all of your selected enchantments?", 
             Buttons = {
                 {
                     Title = "Confirm",
@@ -2667,8 +3167,7 @@ AutoEnchantSection:AddButton({
                         for _, enchant in ipairs(enchantsToCraft) do
                             local args = {enchant.id, enchant.tier, enchant.amount}
                             pcall(function()
-                                game:GetService("ReplicatedStorage")
-                                    .Shared.Packages.Knit.Services.EnchantmentUpgradeService.RF.upgrade:InvokeServer(unpack(args))
+                                ReplicatedStorage.Shared.Packages.Knit.Services.EnchantmentUpgradeService.RF.upgrade:InvokeServer(unpack(args))
                             end)
                             task.wait(0.2)
                         end
@@ -2686,53 +3185,32 @@ AutoEnchantSection:AddButton({
     end
 })
 
--- Refresh button to update the enchantment list
-AutoEnchantSection:AddButton({
-    Title = "Refresh Enchantment List",
-    Description = "Update the list of available enchantments",
-    Callback = function()
-        enchantDropdown:SetValues(getEnchantmentNames())
-        updateEnchantInfo(selectedEnchantments)
-    end
-})
 
+
+-- === MINIGAMES SECTION ===
 local minigameKeys = 0
 
--- Add a status paragraph to display Minigame Keys
-local minigameStatus = Tabs.Minigames:AddParagraph("MinigameKeys", {
+minigameStatus = Tabs.Minigames:AddParagraph("MinigameKeys", {
     Title = "Minigame Keys",
     Content = "Loading minigame key count...",
     TitleAlignment = "Middle",
     ContentAlignment = Enum.TextXAlignment.Left
 })
 
--- Function to update minigame key count
 local function updateMinigameKeyCount()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Knit = require(ReplicatedStorage.Shared.Packages.Knit)
-    local BackpackCategory = require(ReplicatedStorage.Shared.Enums.BackpackCategory)
-    local BackpackCurrencyTypes = require(ReplicatedStorage.Shared.Enums.BackpackCurrencyTypes)
-    
-    -- Get BackpackController
-    local backpackController = Knit.GetController("BackpackController")
-    
-    -- Function to get currency amount
     local function getCurrencyAmount(category, currencyType)
-        if backpackController and backpackController.get then
-            return backpackController:get(category, currencyType) or 0
+        if BackpackController and BackpackController.get then
+            return BackpackController:get(category, currencyType) or 0
         end
         return 0
     end
     
-    -- Get and display minigame keys
     minigameKeys = getCurrencyAmount(BackpackCategory.BackpackCurrency, BackpackCurrencyTypes.MinigameKey)
     minigameStatus:SetValue("🔑 Minigame Keys: " .. minigameKeys)
 end
 
--- Initial update
 updateMinigameKeyCount()
 
--- Update key count every 5 seconds
 task.spawn(function()
     while true do
         task.wait(5)
@@ -2740,8 +3218,7 @@ task.spawn(function()
     end
 end)
 
-
-local ObbySection = Tabs.Minigames:AddSection("Parkour Obby")
+ObbySection = Tabs.Minigames:AddSection("Parkour Obby")
 
 local autoObbyEnabled = false
 local autoObbyConnection = nil
@@ -2756,26 +3233,23 @@ ObbySection:AddToggle("AutoObby", {
         if enabled and minigameKeys > 0 then
             autoObbyConnection = task.spawn(function()
                 while autoObbyEnabled do
-                    -- Enter the obby
                     local args = {
                         [1] = "OBBY_W2Z3"
                     }
                     
                     pcall(function()
-                        game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.ObbyService.RF.enter:InvokeServer(unpack(args))
+                        ReplicatedStorage.Shared.Packages.Knit.Services.ObbyService.RF.enter:InvokeServer(unpack(args))
                     end)
                     
-                    -- Wait a moment for obby to load
                     task.wait(0.1)
                     
-                    -- Teleport to end if path exists
                     local function teleportToEnd()
                         if workspace:FindFirstChild("Obby") and 
                            workspace.Obby:FindFirstChild("OBBY_W2Z3") and 
                            workspace.Obby.OBBY_W2Z3:FindFirstChild("Important") and
                            workspace.Obby.OBBY_W2Z3.Important:FindFirstChild("End") then
                             
-                            local character = game.Players.LocalPlayer.Character
+                            local character = LocalPlayer.Character
                             if character and character:FindFirstChild("HumanoidRootPart") then
                                 character.HumanoidRootPart.CFrame = workspace.Obby.OBBY_W2Z3.Important.End.CFrame + Vector3.new(0, 1, 0)
                                 return true
@@ -2784,10 +3258,8 @@ ObbySection:AddToggle("AutoObby", {
                         return false
                     end
                     
-                    -- Try to teleport, retry a few times if needed
                     local success = teleportToEnd()
                     
-                    -- If failed, check again a few times
                     if not success then
                         for i = 1, 2 do
                             task.wait(0.3)
@@ -2797,7 +3269,6 @@ ObbySection:AddToggle("AutoObby", {
                         end
                     end
                     
-                    -- Wait before next attempt
                     task.wait(1)
                 end
             end)
@@ -2810,8 +3281,8 @@ ObbySection:AddToggle("AutoObby", {
     end
 })
 
--- Gifts Tab: Auto Claim Section
-local AutoClaimSection = Tabs.Gifts:AddSection("Auto Claim")
+-- === GIFTS SECTION ===
+AutoClaimSection = Tabs.Gifts:AddSection("Auto Claim")
 
 local autoClaimEnabled = false
 local autoClaimConnection = nil
@@ -2829,9 +3300,9 @@ AutoClaimSection:AddToggle("AutoClaimGifts", {
                     for i = 1, 12 do
                         local args = { i }
                         pcall(function()
-                            game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.TimedRewardsService.RF.claim:InvokeServer(unpack(args))
+                            ReplicatedStorage.Shared.Packages.Knit.Services.TimedRewardsService.RF.claim:InvokeServer(unpack(args))
                         end)
-                        task.wait(0.5) -- slight delay between claims to avoid flooding
+                        task.wait(0.5)
                     end
                     task.wait(20)
                 end
@@ -2858,9 +3329,9 @@ AutoClaimSection:AddToggle("AutoDailyDaily", {
                     for i = 1, 7 do
                         local args = { i }
                         pcall(function()
-                            game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.DailyService.RF.claim:InvokeServer(unpack(args))
+                            ReplicatedStorage.Shared.Packages.Knit.Services.DailyService.RF.claim:InvokeServer(unpack(args))
                         end)
-                        task.wait(1) -- slight delay between claims to avoid flooding
+                        task.wait(1)
                     end
                     task.wait(30)
                 end
@@ -2874,10 +3345,52 @@ AutoClaimSection:AddToggle("AutoDailyDaily", {
     end
 })
 
+AutoClaimSection:AddToggle("AutoChest", {
+    Title = "Auto Claim Group Chest",
+    Description = "Automatically claim available chests (won't visually show as claimed until you rejoin).",
+    Default = false,
+    Callback = function(enabled)
+        autoChestEnabled = enabled
 
-local VendingMachines = require(game:GetService("ReplicatedStorage").Shared.Balancing.Shared.VendingMachines)
+        if enabled then
+            autoChestConnection = task.spawn(function()
+                while autoChestEnabled do
+                    -- Loop through all chests dynamically
+                    for _, world in pairs(workspace.Core_Game.Chests:GetChildren()) do
+                        for _, group in pairs(world:GetChildren()) do
+                            local hitbox = group:FindFirstChild("Hitbox")
+                            if hitbox then
+                                local textLabel = hitbox.Attachment.Billboard.Frame:FindFirstChild("TextLow")
+                                if textLabel and not textLabel.Text:match("%d") then
+                                    -- Fire the touch to claim
+                                    pcall(function()
+                                        local hrp = game.Players.LocalPlayer.Character.HumanoidRootPart
+                                        firetouchinterest(hrp, hitbox, 0)
+                                        firetouchinterest(hrp, hitbox, 1)
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(1) -- check every second
+                end
+            end)
+        else
+            if autoChestConnection then
+                task.cancel(autoChestConnection)
+                autoChestConnection = nil
+            end
+        end
+    end
+})
 
--- Build vending machine dropdown values and key map
+
+local VendingMachines = require(ReplicatedStorage.Shared.Balancing.Shared.VendingMachines)
+
+
+local vendingMachineService = Knit.GetService("VendingMachineService")
+
+-- Build vending machine dropdown
 local vendingNames = {}
 local vendingKeyMap = {}
 
@@ -2889,14 +3402,15 @@ for vendingKey, config in pairs(VendingMachines) do
     vendingKeyMap[displayName] = vendingKey
 end
 
--- Sort vendingNames alphabetically
 table.sort(vendingNames)
 
-local selectedVending = {} -- Multi-select dictionary
+local selectedVending = {}
+local vendingLoops = {}
 
-local vending = Tabs.Gifts:AddSection("Vending Machines")
+-- Dropdown
+vending = Tabs.Gifts:AddSection("Vending Machines")
 
-local vendingDropdown = vending:AddDropdown("VendingSelect", {
+vendingDropdown = vending:AddDropdown("VendingSelect", {
     Title = "Select Vending Machine",
     Description = "Choose vending machines to auto buy from.",
     Values = vendingNames,
@@ -2907,10 +3421,44 @@ local vendingDropdown = vending:AddDropdown("VendingSelect", {
     end
 })
 
-local autoBuyEnabled = false
-local autoBuyCoroutine = nilw
+-- Safe stock fetch
+local function getStock(data)
+    local stock = 0
+    if typeof(data) == "number" then
+        stock = data
+    elseif typeof(data) == "table" and data.Stock then
+        if typeof(data.Stock) == "number" then
+            stock = data.Stock
+        elseif typeof(data.Stock) == "table" then
+            for _, amt in pairs(data.Stock) do
+                if type(amt) == "number" then
+                    stock = stock + amt
+                end
+            end
+        end
+    end
+    return stock
+end
 
-local vendingToggle = vending:AddToggle("AutoBuyVending", {
+-- Safe buy
+local function buyFromMachine(vendingKey, displayName)
+    vendingMachineService:open(vendingKey):andThen(function(success, data)
+        if not success or typeof(data) ~= "table" then
+            return
+        end
+
+        local stock = getStock(data)
+        if stock > 0 then
+            pcall(function()
+                ReplicatedStorage.Shared.Packages.Knit.Services.VendingMachineService.RF.purchase:InvokeServer(vendingKey)
+            end)
+        end
+    end)
+end
+
+-- Auto-buy toggle
+local autoBuyEnabled = false
+vendingToggle = vending:AddToggle("AutoBuyVending", {
     Title = "Auto Buy",
     Description = "Automatically buys from selected vending machines until stock runs out.",
     Default = false,
@@ -2918,77 +3466,134 @@ local vendingToggle = vending:AddToggle("AutoBuyVending", {
         autoBuyEnabled = enabled
 
         if enabled then
-            autoBuyCoroutine = task.spawn(function()
-                while autoBuyEnabled do
-                    for vendingName, isSelected in pairs(selectedVending) do
-                        if isSelected then
+            for vendingName, isSelected in pairs(selectedVending) do
+                if isSelected and not vendingLoops[vendingName] then
+                    local vendingKey = vendingKeyMap[vendingName]
+                    vendingLoops[vendingName] = task.spawn(function()
+                        while autoBuyEnabled and selectedVending[vendingName] do
+                            buyFromMachine(vendingKey, vendingName)
+                            task.wait(1)
                         end
-                    end
-
-                    for vendingName, isSelected in pairs(selectedVending) do
-                        if isSelected and autoBuyEnabled then
-                            local vendingKey = vendingKeyMap[vendingName]
-                            local config = VendingMachines[vendingKey]
-                            local stock = config and config.Stock or 0
-
-                            local purchases = 0
-                            while stock > 0 and purchases < 3 and autoBuyEnabled do
-                                pcall(function()
-                                    ReplicatedStorage.Shared.Packages.Knit.Services.VendingMachineService.RF.purchase:InvokeServer(vendingKey)
-                                end)
-                                purchases += 1
-                                task.wait(1)
-
-                                -- Refresh stock
-                                config = VendingMachines[vendingKey]
-                                stock = config and config.Stock or 0
-                            end
-                        end
-                    end
-
-                    task.wait(1801) -- Wait 30 minutes and 1 second before next round
+                        vendingLoops[vendingName] = nil
+                    end)
                 end
-            end)
-        else
-            if autoBuyCoroutine then
-                task.cancel(autoBuyCoroutine)
-                autoBuyCoroutine = nil
             end
+        else
+            for _, loop in pairs(vendingLoops) do
+                task.cancel(loop)
+            end
+            vendingLoops = {}
         end
     end
 })
 
+-- Optional: print all vending machine stock
+local function printVendingMachineStock()
+    print("==== VENDING MACHINE STOCK ====")
+    for vendingKey, config in pairs(VendingMachines) do
+        local world = config.World or "World?"
+        local zone = config.Zone or "Zone?"
+        local displayName = tostring(world) .. "_Zone" .. tostring(zone)
+        vendingMachineService:open(vendingKey):andThen(function(success, data)
+            local stock = 0
+            if success and data then stock = getStock(data) end
+            local rewardName = (data and data.Reward and data.Reward.Name) or "Unknown"
+        end)
+    end
+end
 
 
 -- Hand the library over to our managers
 SaveManager:SetLibrary(Library)
 InterfaceManager:SetLibrary(Library)
-
--- Ignore keys that are used by ThemeManager.
--- (we dont want configs to save themes, do we?)
 SaveManager:IgnoreThemeSettings()
-
--- You can add indexes of elements the save manager should ignore
 SaveManager:SetIgnoreIndexes{}
-
-
-
-local antiafk = Tabs.Settings:AddSection("Anti AFK")
-
-Tabs.Settings:AddButton({
-    Title = "Anti Afk",
-    Description = "Never get kicked for being inactive.",
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/SenhorLDS/ProjectLDSHUB/refs/heads/main/Anti%20AFK"))()
-    end
-})
-
-
-
 InterfaceManager:SetFolder("FluentScriptHub")
 SaveManager:SetFolder("FluentScriptHub/specific-game")
 
+-- Add Anti-AFK button to Settings tab
+local antiafk = Tabs.Settings:AddSection("Anti AFK")
+
+Tabs.Settings:AddButton({
+    Title = "Anti AFK",
+    Description = "Prevents being kicked from inactivity.",
+    Callback = function()
+        -- First click immediately
+        clickTopRight()
+
+        -- Add periodic clicking (every 5 minutes) to prevent AFK disconnection
+        task.spawn(function()
+            while true do
+                task.wait(300) -- 5 minutes
+                clickTopRight()
+            end
+        end)
+    end
+})
+
+local usercountsection = Tabs.Settings:AddSection("User Count")
+
+local userCountParagraph = Tabs.Settings:AddParagraph("UserCountStatus", {
+    Title = "Script User Count",
+    Content = "Loading..."
+})
+
+-- Step 1: Register the user
+local registerResponse = requestFunc({
+    Url = "https://duckyscripts.pythonanywhere.com/api/pet/add-user",
+    Method = "POST",
+    Headers = {
+        ["Content-Type"] = "application/json"
+    },
+    Body = HttpService:JSONEncode({
+        username = username,
+        userid = userid
+    })
+})
+
+-- Optional: handle registration response if needed
+if registerResponse and registerResponse.Body then
+    local responseData = HttpService:JSONDecode(registerResponse.Body)
+    if responseData.success then
+        print("Registered user:", username)
+    end
+end
+
+-- Step 2: Heartbeat loop to set user active and update counts
+task.spawn(function()
+    while true do
+        local heartbeatResponse = requestFunc({
+            Url = "https://duckyscripts.pythonanywhere.com/api/pet/active",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode({
+                userid = userid,
+                active = true
+            })
+        })
+
+        if heartbeatResponse and heartbeatResponse.Body then
+            local responseBody = heartbeatResponse.Body
+            local data = HttpService:JSONDecode(responseBody)
+            
+            -- Update the paragraph with current counts
+            local activeCount = data.active_count or 0
+            local totalCount = data.count or 0
+            userCountParagraph:SetValue(
+                "Total users: " .. tostring(totalCount) .. "\n" ..
+                "Active Users: " .. tostring(activeCount)
+            )
+        end
+
+        task.wait(30) -- wait 30 seconds between heartbeats
+    end
+end)
+
+
+
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
-
-Window:SelectTab("Settings")
+Window:SelectTab(1)
+SaveManager:LoadAutoloadConfig()
