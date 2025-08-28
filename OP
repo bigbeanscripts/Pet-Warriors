@@ -3168,6 +3168,16 @@ ObbySection:AddToggle("AutoObby", {
     end
 })
 
+local Mining = Tabs.Minigames:AddSection("Mining")
+
+Mining:AddButton({
+    Title = "Mining Script",
+    Description = "Loads my Mining script",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/bigbeanscripts/mining/refs/heads/main/petwarriors"))()
+    end
+})
+
 -- === GIFTS SECTION ===
 AutoClaimSection = Tabs.Gifts:AddSection("Auto Claim")
 
