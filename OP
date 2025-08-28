@@ -1404,157 +1404,108 @@ QuestSection:AddButton({
 local EggsModule = require(ReplicatedStorage.Shared.Balancing.Shared.Eggs)
 local PetsEnum = require(ReplicatedStorage.Shared.Enums.Pets)
 
-local function completeQuest(questName, questData)
-    if not questData or questData.Completed then return end
+-- ...existing code...
 
+local function isQuestActive(questId)
+    for _, activeQuest in pairs(QuestController.Current) do
+        if activeQuest.Type == questId and not activeQuest.Completed then
+            return true, activeQuest
+        end
+    end
+    return false, nil
+end
+
+local function completeQuest(questName, questData)
+    if not questData then return end
+
+    -- Always run if quest is active, even if progress is x/x
+    local function runWhileActive(action, interval)
+        interval = interval or 1
+        while autoCompleteEnabled do
+            local activeQuest = getQuestData(questData.Type)
+            if not activeQuest then break end
+            action(activeQuest)
+            task.wait(interval)
+        end
+    end
 
     if questName == "Upgrade Pets" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                -- Find the egg in EggsModule that matches our ID
+            runWhileActive(function(currentQuest)
                 local egg = EggsModule.Eggs[SelectedEgg]
                 if egg and egg.Loot and egg.Loot.Rewards then
-                    -- Collect all common pets from this egg
                     local commonPets = {}
-                    
-                    -- First get all pets with >15% chance and their IDs
                     for petId, chance in pairs(egg.Loot.Rewards) do
                         if type(petId) ~= "string" and chance > 15 then
-                            -- Find the pet's name from PetsEnum
                             for petName, enumId in pairs(PetsEnum) do
                                 if enumId == petId then
-                                    table.insert(commonPets, {
-                                        id = tostring(enumId) .. "-1",  -- Add the -1 for tier 1
-                                        chance = chance
-                                    })
+                                    table.insert(commonPets, { id = tostring(enumId) .. "-1", chance = chance })
                                     break
                                 end
                             end
                         end
                     end
-    
-                    -- Keep hatching eggs while quest isn't complete
-                    local args = {
-                        [1] = SelectedEgg,
-                        [2] = hatchAmount,
-                        [3] = false
-                    }
-                    EggService.RF.purchaseEgg:InvokeServer(unpack(args))
-    
-                    -- If we found any common pets, try to gold a random one
+                    EggService.RF.purchaseEgg:InvokeServer(SelectedEgg, hatchAmount, false)
                     if #commonPets > 0 then
-                        -- Pick a random pet from our common pets
                         local randomPet = commonPets[math.random(1, #commonPets)]
-                        
-                        -- Try to gold this pet using its ID
-                        local args = {
-                            [1] = randomPet.id,  -- Use the ID-1 format directly
-                            [2] = 5
-                        }
-                        GoldMachineService.RF.craft:InvokeServer(unpack(args))
+                        GoldMachineService.RF.craft:InvokeServer(randomPet.id, 5)
                     end
                 end
-                task.wait(1)
-            end
+            end, 1)
         end)
     end
 
-    -- Store original AutoFight state before running any quest logic
     local originalAutoFightState = AutoFightToggle.Value
 
     if questName == "Kill Bosses" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
+            runWhileActive(function(currentQuest)
                 if not AutoFightToggle.Value then
                     AutoFightToggle:SetValue(true)
                 end
-                
-                if questData.Progress >= questData.Goal then
-                    break -- exit loop
-                end
-
-                task.wait(1)
-            end
-
-            -- After loop ends, handle completion
-            if questData.Progress >= questData.Goal or questData.Completed then
-                if not originalAutoFightState then
-                    AutoFightToggle:SetValue(false)
-                end
+            end, 1)
+            if not originalAutoFightState then
+                AutoFightToggle:SetValue(false)
             end
         end)
     end
 
     if questName == "Win Battles" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
+            runWhileActive(function(currentQuest)
                 if not AutoFightToggle.Value then
                     AutoFightToggle:SetValue(true)
                 end
-                
-                if questData.Progress >= questData.Goal then
-                    break
-                end
-
-                task.wait(1)
-            end
-
-            -- After loop ends, handle completion
-            if questData.Progress >= questData.Goal or questData.Completed then
-                if not originalAutoFightState then
-                    AutoFightToggle:SetValue(false)
-                end
+            end, 1)
+            if not originalAutoFightState then
+                AutoFightToggle:SetValue(false)
             end
         end)
     end
 
-    -- For Open Sword Chest quest
     if questName == "Open Sword Chests" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                local args = {
-                    [1] = ChestDropdown.Value or "W1Z1"
-                }
-                SwordCrateService.RF.open:InvokeServer(unpack(args))
-                task.wait(1)
-            end
+            runWhileActive(function(currentQuest)
+                SwordCrateService.RF.open:InvokeServer(ChestDropdown.Value or "W1Z1")
+            end, 1)
         end)
-    end 
+    end
 
-    -- For Hatch Eggs quest
     if questName == "Hatch Eggs" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                
-                local args = {
-                    [1] = SelectedEgg or "W1_Z1", -- Use the selected egg or default
-                    [2] = hatchAmount or 1,
-                    [3] = false
-                }
-                
-                EggService.RF.purchaseEgg:InvokeServer(unpack(args))
-                task.wait(1)
-            end
+            runWhileActive(function(currentQuest)
+                EggService.RF.purchaseEgg:InvokeServer(SelectedEgg or "W1_Z1", hatchAmount or 1, false)
+            end, 1)
         end)
     end
 
     if questName == "Break Breakables" then
         task.spawn(function()
-            -- Save original AutoTrain state
             local originalAutoTrainState = autoTrainEnabled
-
-            -- Turn on AutoTrain if not already on
             if not autoTrainEnabled then
                 AutoTrain:SetValue(true)
             end
-
-            -- Wait for quest completion
-            while autoCompleteEnabled and not questData.Completed do
-                if questData.Progress >= questData.Goal then break end
-                task.wait(1)
-            end
-
-            -- Restore original AutoTrain state
+            runWhileActive(function(currentQuest) end, 1)
             if not originalAutoTrainState then
                 AutoTrain:SetValue(false)
             end
@@ -1563,26 +1514,15 @@ local function completeQuest(questName, questData)
 
     if questName == "Use Potions" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                -- Find potion with highest count
+            runWhileActive(function(currentQuest)
                 local potionController = Knit.GetController("PotionController")
                 local PotionTypes = require(ReplicatedStorage.Shared.Enums.PotionTypes)
                 local storage = potionController.Storage or {}
-                
-                local mostPotion = {
-                    id = nil,
-                    tier = nil,
-                    count = 0
-                }
-                
-                -- Check storage for potions (only tiers 1-3)
+                local mostPotion = { id = nil, tier = nil, count = 0 }
                 for potionId, tiers in pairs(storage) do
                     for tier, amount in pairs(tiers) do
-                        -- Convert to numbers to avoid type comparison issues
                         amount = tonumber(amount) or 0
                         tier = tonumber(tier) or 1
-                        
-                        -- Only consider tiers 1-3 as those are the most common
                         if tier <= 3 and amount > mostPotion.count then
                             mostPotion.id = potionId
                             mostPotion.tier = tier
@@ -1590,71 +1530,28 @@ local function completeQuest(questName, questData)
                         end
                     end
                 end
-                
-                -- If we found a potion, use it
                 if mostPotion.id and mostPotion.count > 0 then
-                    -- Convert potion ID to enum name
-                    local potionName = "Wins" -- Default fallback
+                    local potionName = "Wins"
                     for enumName, id in pairs(PotionTypes) do
                         if id == mostPotion.id then
                             potionName = enumName
                             break
                         end
                     end
-                    
-                    -- Check if quest still exists and isn't completed
-                    local questStillActive = false
-                    for activeId, activeQuest in pairs(QuestController.Current) do
-                        if activeQuest.Name and activeQuest.Type == questMap[questName] then
-                            if not activeQuest.Completed then
-                                questStillActive = true
-                                break
-                            end
-                        end
-                    end
-                    
-                    if not questStillActive then
-                        break -- Exit if quest is no longer active
-                    end
-                    
-                    -- Use exactly ONE potion at a time
-                    local args = {
-                        [1] = potionName,
-                        [2] = mostPotion.tier,
-                        [3] = 1  -- Always use just 1 potion at a time
-                    }
-                    
-                    local success, result = pcall(function()
-                        return game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PotionUseService.RF.use:InvokeServer(unpack(args))
-                    end)
-                    
-                    -- Wait before using the next potion (1 second)
-                    task.wait(1)
-                else
-                    task.wait(5)
+                    game:GetService("ReplicatedStorage").Shared.Packages.Knit.Services.PotionUseService.RF.use:InvokeServer(potionName, mostPotion.tier, 1)
                 end
-            end
+            end, 1)
         end)
     end
 
-
-    -- For Open Gifts quest
     if questName == "Open Gifts" then
         task.spawn(function()
-            while autoCompleteEnabled and not questData.Completed do
-                -- Load BackpackInventoryController
+            runWhileActive(function(currentQuest)
                 local BackpackInventoryController = require(game:GetService("Players").LocalPlayer.PlayerScripts.Client.Controllers.Shared.Utility.Backpack.BackpackInventoryController)
-
-                -- Access the GiftConsumables category (corrected from 'Gift' to 'GiftConsumables')
                 local giftCategory = BackpackInventoryController.Amounts.GiftConsumables or {}
-
-                local maxAmount = 0
-                local bestGiftBag = nil
-
-                -- Iterate over giftCategory to find the bag with the most gifts
+                local maxAmount, bestGiftBag = 0, nil
                 for itemName, data in pairs(giftCategory) do
                     if type(data) == "table" then
-                        -- Nested table found, iterate inside it
                         for nestedName, nestedAmount in pairs(data) do
                             if nestedAmount > maxAmount then
                                 maxAmount = nestedAmount
@@ -1668,22 +1565,21 @@ local function completeQuest(questName, questData)
                         end
                     end
                 end
-
-                if bestGiftBag then
-                    local giftsToOpen = questData.Goal - questData.Progress
-
-                    if giftsToOpen > 0 and maxAmount > 0 then
-                        local args = {bestGiftBag, giftsToOpen}
-                        ReplicatedStorage.Shared.Packages.Knit.Services.GiftBagService.RF.openGift:InvokeServer(unpack(args))
-                    end
+                if bestGiftBag and maxAmount > 0 then
+                    ReplicatedStorage.Shared.Packages.Knit.Services.GiftBagService.RF.openGift:InvokeServer(bestGiftBag, 1)
                 end
+            end, 1)
+        end)
+    end
 
-                task.wait(1)
-            end
+    if questName == "Swing Sword" then
+        task.spawn(function()
+            runWhileActive(function(currentQuest)
+                ReplicatedStorage.Shared.Packages.Knit.Services.SwordAttackService.RF.swing:InvokeServer()
+            end, 0.25)
         end)
     end
 end
-
 
 -- Update the auto-complete toggle callback
 QuestSection:AddToggle("AutoCompleteQuest", {
@@ -1694,27 +1590,18 @@ QuestSection:AddToggle("AutoCompleteQuest", {
         autoCompleteEnabled = enabled
 
         if enabled then
-            -- Auto complete selected quests
             task.spawn(function()
                 while autoCompleteEnabled do
                     for title, isSelected in pairs(selectedQuests) do
                         if isSelected then
                             local questId = questMap[title]
                             local questData = getQuestData(questId)
-                            if questData and not questData.Completed then
+                            if questData then
                                 completeQuest(title, questData)
                             end
                         end
                     end
                     task.wait(1)
-                end
-            end)
-
-            -- Always swing sword while toggle is on
-            task.spawn(function()
-                while autoCompleteEnabled do
-                    ReplicatedStorage.Shared.Packages.Knit.Services.SwordAttackService.RF.swing:InvokeServer()
-                    task.wait(0.25) -- adjust swing speed here
                 end
             end)
         end
