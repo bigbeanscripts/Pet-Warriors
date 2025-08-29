@@ -3106,7 +3106,6 @@ task.spawn(function()
 end)
 
 ObbySection = Tabs.Minigames:AddSection("Parkour Obby")
-
 local autoObbyEnabled = false
 local autoObbyConnection = nil
 
@@ -3118,45 +3117,39 @@ ObbySection:AddToggle("AutoObby", {
         autoObbyEnabled = enabled
 
         if enabled and minigameKeys > 0 then
+            if autoObbyConnection then task.cancel(autoObbyConnection) end
+
             autoObbyConnection = task.spawn(function()
+                local LocalPlayer = game:GetService("Players").LocalPlayer
+                local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
                 while autoObbyEnabled do
-                    local args = {
-                        [1] = "OBBY_W2Z3"
-                    }
-                    
+                    -- Enter the Obby (safe call)
                     pcall(function()
-                        ReplicatedStorage.Shared.Packages.Knit.Services.ObbyService.RF.enter:InvokeServer(unpack(args))
+                        ReplicatedStorage.Shared.Packages.Knit.Services.ObbyService.RF.enter:InvokeServer("OBBY_W2Z3")
                     end)
-                    
-                    task.wait(0.1)
-                    
+
+                    -- Teleport function
                     local function teleportToEnd()
-                        if workspace:FindFirstChild("Obby") and 
-                           workspace.Obby:FindFirstChild("OBBY_W2Z3") and 
-                           workspace.Obby.OBBY_W2Z3:FindFirstChild("Important") and
-                           workspace.Obby.OBBY_W2Z3.Important:FindFirstChild("End") then
-                            
-                            local character = LocalPlayer.Character
-                            if character and character:FindFirstChild("HumanoidRootPart") then
-                                character.HumanoidRootPart.CFrame = workspace.Obby.OBBY_W2Z3.Important.End.CFrame + Vector3.new(0, 1, 0)
-                                return true
-                            end
+                        local obby = workspace:FindFirstChild("Obby")
+                        local obbyPart = obby and obby:FindFirstChild("OBBY_W2Z3")
+                        local important = obbyPart and obbyPart:FindFirstChild("Important")
+                        local endPart = important and important:FindFirstChild("End")
+
+                        local character = LocalPlayer.Character
+                        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+                        if endPart and hrp then
+                            hrp.CFrame = endPart.CFrame + Vector3.new(0, 1, 0)
+                            return true
                         end
                         return false
                     end
-                    
-                    local success = teleportToEnd()
-                    
-                    if not success then
-                        for i = 1, 2 do
-                            task.wait(0.3)
-                            if teleportToEnd() then
-                                break
-                            end
-                        end
-                    end
-                    
-                    task.wait(1)
+
+                    -- Always try to teleport if toggle is on
+                    teleportToEnd()
+
+                    task.wait(0.5) -- small delay to prevent spamming too fast
                 end
             end)
         else
@@ -3167,6 +3160,7 @@ ObbySection:AddToggle("AutoObby", {
         end
     end
 })
+
 
 local Mining = Tabs.Minigames:AddSection("Mining")
 
