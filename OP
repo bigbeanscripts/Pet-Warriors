@@ -3106,6 +3106,7 @@ task.spawn(function()
 end)
 
 ObbySection = Tabs.Minigames:AddSection("Parkour Obby")
+
 local autoObbyEnabled = false
 local autoObbyConnection = nil
 
@@ -3129,27 +3130,21 @@ ObbySection:AddToggle("AutoObby", {
                         ReplicatedStorage.Shared.Packages.Knit.Services.ObbyService.RF.enter:InvokeServer("OBBY_W2Z3")
                     end)
 
-                    -- Teleport function
-                    local function teleportToEnd()
-                        local obby = workspace:FindFirstChild("Obby")
-                        local obbyPart = obby and obby:FindFirstChild("OBBY_W2Z3")
-                        local important = obbyPart and obbyPart:FindFirstChild("Important")
-                        local endPart = important and important:FindFirstChild("End")
+                    -- Fire the TouchInterest directly
+                    local endPart = workspace:FindFirstChild("Obby") 
+                        and workspace.Obby:FindFirstChild("OBBY_W2Z3") 
+                        and workspace.Obby.OBBY_W2Z3:FindFirstChild("Important") 
+                        and workspace.Obby.OBBY_W2Z3.Important:FindFirstChild("End")
 
-                        local character = LocalPlayer.Character
-                        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-                        if endPart and hrp then
-                            hrp.CFrame = endPart.CFrame + Vector3.new(0, 1, 0)
-                            return true
+                    if endPart and endPart:FindFirstChild("TouchInterest") then
+                        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            firetouchinterest(hrp, endPart, 0) -- touch began
+                            firetouchinterest(hrp, endPart, 1) -- touch ended
                         end
-                        return false
                     end
 
-                    -- Always try to teleport if toggle is on
-                    teleportToEnd()
-
-                    task.wait(0.5) -- small delay to prevent spamming too fast
+                    task.wait(0.5)
                 end
             end)
         else
