@@ -3248,7 +3248,7 @@ minigamesTab:AddToggle("AutoCircusMinigame", {
             autoCircusEnterConnection = task.spawn(function()
                 while autoCircusEnabled do
                     ReplicatedStorage.Shared.Packages.Knit.Services.CircusService.RE.Enter:FireServer()
-                    task.wait(5)
+                    task.wait(3)
                 end
             end)
 
