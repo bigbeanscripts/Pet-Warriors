@@ -3222,7 +3222,7 @@ local function openRandomBarrel()
                 end)
             end
         end
-        task.wait(1.5)
+        task.wait(1)
         
         -- Fire the click event instead of waiting for it
         CircusController.OnClick:Fire()
@@ -3246,29 +3246,37 @@ minigamesTab:AddToggle("AutoCircusMinigame", {
         autoCircusEnabled = enabled
 
         if enabled then
-            autoCircusConnection = task.spawn(function()
+            -- Loop for firing Enter every 5 seconds
+            autoCircusEnterConnection = task.spawn(function()
                 while autoCircusEnabled do
-                    -- Always attempt to enter the circus every 2 seconds
                     ReplicatedStorage.Shared.Packages.Knit.Services.CircusService.RE.Enter:FireServer()
+                    task.wait(5)
+                end
+            end)
 
+            -- Loop for clicking every 1 second if Circus is active
+            autoCircusClickConnection = task.spawn(function()
+                while autoCircusEnabled do
                     if CircusController.Active then
                         if CircusController.Current == 31 then
                             leaveCircus()
                             repeat task.wait(1) until not CircusController.Active
                         else
-                            -- Trigger a fake click to start the process
                             CircusController.OnClick:Fire()
                         end
                     end
-
-                    -- Wait 2 seconds before next iteration
-                    task.wait(1.5)
+                    task.wait(1)
                 end
             end)
         else
-            if autoCircusConnection then
-                task.cancel(autoCircusConnection)
-                autoCircusConnection = nil
+            -- Stop both loops
+            if autoCircusEnterConnection then
+                task.cancel(autoCircusEnterConnection)
+                autoCircusEnterConnection = nil
+            end
+            if autoCircusClickConnection then
+                task.cancel(autoCircusClickConnection)
+                autoCircusClickConnection = nil
             end
         end
     end
