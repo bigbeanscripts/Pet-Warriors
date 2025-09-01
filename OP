@@ -3195,7 +3195,6 @@ end
 
 -- Function to open a random barrel
 local function openRandomBarrel()
-    if not CircusController.Active then return end
     if CircusController.Current == 31 then return end -- Don't open or progress if room is 31
 
     local barrels = CircusController:getBarrels()
@@ -3237,7 +3236,6 @@ end
 -- Connect to the OnClick event
 CircusController.OnClick:Connect(openRandomBarrel)
 
--- Toggle for auto play
 minigamesTab:AddToggle("AutoCircusMinigame", {
     Title = "Auto Circus Minigame",
     Description = "Automatically complete the Circus minigame.",
@@ -3254,16 +3252,14 @@ minigamesTab:AddToggle("AutoCircusMinigame", {
                 end
             end)
 
-            -- Loop for clicking every 1 second if Circus is active
+            -- Loop for clicking every 1 second (no Active check)
             autoCircusClickConnection = task.spawn(function()
                 while autoCircusEnabled do
-                    if CircusController.Active then
-                        if CircusController.Current == 31 then
-                            leaveCircus()
-                            repeat task.wait(1) until not CircusController.Active
-                        else
-                            CircusController.OnClick:Fire()
-                        end
+                    if CircusController.Current == 31 then
+                        leaveCircus()
+                        repeat task.wait(1) until not (CircusController.Current == 31)
+                    else
+                        CircusController.OnClick:Fire()
                     end
                     task.wait(1)
                 end
@@ -3282,6 +3278,12 @@ minigamesTab:AddToggle("AutoCircusMinigame", {
     end
 })
 
+local circusparagraph = minigamesTab:AddParagraph("CircusInfo", {
+    Title = "MUST READ",
+    Content = "This will gurantee you get a mega each time!!! Abuse before it gets patched!",
+    TitleAlignment = "Middle",
+    ContentAlignment = Enum.TextXAlignment.Left
+})
 
 local Mining = Tabs.Minigames:AddSection("Mining Minigame")
 
